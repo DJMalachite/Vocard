@@ -39,7 +39,7 @@ services:
       # then fill in the Discord OAuth2 credentials.
       - ./dashboard/settings.json:/app/settings.json
     ports:
-      - "8000:8000"
+      - "8110:8110"
 
   spotify-tokener:
     image: ghcr.io/topi314/spotify-tokener:master

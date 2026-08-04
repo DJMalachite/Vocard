@@ -47,7 +47,7 @@
     "lyrics_platform": "lrclib",
     "ipc_client": {
         "host": "vocard-dashboard",
-        "port": 8000,
+        "port": 8110,
         "password": "vocard-dev-ipc",
         "secure": false,
         "enable": true
