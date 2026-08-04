@@ -64,7 +64,8 @@
         "enable": false,
         "piper": {
             "url": "http://localhost:5000",
-            "voice": "en_US-lessac-medium"
+            "voice": "en_US-lessac-medium",
+            "options": {}
         },
         "server": {
             "host": "0.0.0.0",

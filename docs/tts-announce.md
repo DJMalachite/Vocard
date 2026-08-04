@@ -92,6 +92,12 @@ downloaded automatically on first use.
 - `piper.url` — where the **bot** reaches Piper. `http://localhost:5000` if the bot runs on
   the host with the port published; `http://piper:5000` if the bot runs in the same compose
   network.
+- `piper.options` — optional per-request synthesis tuning, passed straight to Piper's
+  `/synthesize` endpoint. Keys: `length_scale` (speed; higher = slower), `noise_scale`
+  (expressiveness; lower = flatter/robotic), `length_w_scale` (cadence looseness),
+  `speaker_id` (multi-speaker models). Example:
+  `"options": { "length_scale": 1.05, "noise_scale": 0.35, "length_w_scale": 0.5 }` —
+  only the bot needs a restart after changing these, not the Piper container.
 - `server` — the bot's internal announce server. `public_url` is the address **Lavalink**
   uses to reach the bot (no trailing slash).
 - `ai` — only needed for AI mode. For Ollama use

@@ -101,16 +101,19 @@ class AnnounceServer:
 class PiperClient:
     """Minimal client for the piper-tts HTTP server: POST JSON to /synthesize, receive WAV bytes."""
 
-    def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 10):
+    def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 10, options: Optional[dict] = None):
         url = url.rstrip("/")
         if not url.endswith("/synthesize"):
             url += "/synthesize"
         self._url: str = url
         self._voice: Optional[str] = voice
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
+        # Per-request synthesis overrides, e.g. length_scale, noise_scale,
+        # length_w_scale, speaker_id.
+        self._options: dict = options or {}
 
     async def synthesize(self, text: str) -> Optional[bytes]:
-        payload = {"text": text}
+        payload = {**self._options, "text": text}
         if self._voice:
             payload["voice"] = self._voice
 
@@ -174,7 +177,8 @@ class Announcer:
         self._piper = PiperClient(
             url=piper_cfg.get("url", "http://localhost:5000"),
             voice=piper_cfg.get("voice"),
-            timeout=timeouts.get("piper", 10)
+            timeout=timeouts.get("piper", 10),
+            options=piper_cfg.get("options")
         )
         self._ai = AIClient(
             base_url=ai_cfg.get("base_url", "https://api.openai.com/v1"),
