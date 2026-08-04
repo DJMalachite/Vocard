@@ -1,0 +1,38 @@
+# Development stack: Lavalink + MongoDB + Piper TTS.
+# The bot itself runs natively on the host (python main.py).
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: vocard-lavalink
+    restart: unless-stopped
+    environment:
+      - _JAVA_OPTIONS=-Xmx512M
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - lavalink-plugins:/opt/Lavalink/plugins
+    ports:
+      - "2333:2333"
+
+  mongodb:
+    image: mongo:7
+    container_name: vocard-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  piper:
+    image: python:3.12-slim
+    container_name: vocard-piper
+    restart: unless-stopped
+    command: sh -c "pip install --no-cache-dir piper-tts[http] && python -m piper.http_server -m en_US-lessac-medium --host 0.0.0.0 --port 5000 --data-dir /data"
+    volumes:
+      - piper-voices:/data
+    ports:
+      - "5000:5000"
+
+volumes:
+  lavalink-plugins:
+  mongo-data:
+  piper-voices:
