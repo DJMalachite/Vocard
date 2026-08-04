@@ -36,7 +36,7 @@ Recommended: run the official `piper-tts` HTTP server in Docker next to Lavalink
 services:
   piper:
     image: python:3.12-slim
-    command: sh -c "pip install --no-cache-dir piper-tts[http] && python -m piper.http_server -m en_US-lessac-medium --host 0.0.0.0 --port 5000 --data-dir /data"
+    command: sh -c "pip install --no-cache-dir piper-tts[http] && cd /data && python -m piper.download_voices en_US-lessac-medium && python -m piper.http_server -m en_US-lessac-medium --host 0.0.0.0 --port 5000 --data-dir /data"
     volumes:
       - piper-voices:/data
     ports:
