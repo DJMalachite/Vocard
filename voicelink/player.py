@@ -134,6 +134,7 @@ class Player(VoiceProtocol):
 
         self._node = NodePool.get_node()
         self._current: Optional[Track] = None
+        self._pending_track: Optional[Track] = None
         self._filters: Filters = Filters()
         self._paused: bool = False
         self._is_connected: bool = False
@@ -201,8 +202,12 @@ class Player(VoiceProtocol):
 
     @property
     def current(self) -> Optional[Track]:
-        """Property which returns the currently playing track"""
-        return self._current
+        """Property which returns the currently playing track.
+
+        While a TTS announcement clip is playing, this resolves to the real
+        track the clip announces, so the UI never surfaces the clip itself.
+        """
+        return self._pending_track or self._current
 
     @property
     def node(self) -> Node:
@@ -260,7 +265,7 @@ class Player(VoiceProtocol):
             },
             "dj": self.dj.id,
             "is_paused": self.is_paused,
-            "position": self.position,
+            "position": 0 if self._pending_track else self.position,
             "autoplay": self.autoplay
         }
     
@@ -425,6 +430,19 @@ class Player(VoiceProtocol):
         self.shuffle_votes.clear()
         self.stop_votes.clear()
 
+        # An announcement clip just finished; play the track it announced.
+        # Controller/status/IPC were already updated against this track when
+        # the clip started, so no further updates are needed here.
+        if pending := self._pending_track:
+            try:
+                await self.play(pending, start=pending.position)
+            except Exception as e:
+                self._pending_track = None
+                self._logger.error(f"Something went wrong while playing music in {self.guild.name}({self.guild.id})", exc_info=e)
+                await asyncio.sleep(5)
+                return await self.do_next()
+            return
+
         track = self.queue.get()
 
         if not track:
@@ -433,9 +451,22 @@ class Player(VoiceProtocol):
             if self.queue.is_empty:
                 self._schedule_inactive_cleanup_timer()
         else:
+            clip = None
+            announcer = getattr(self._bot, "announcer", None)
+            guild_cfg = self.settings.get("tts_announce") or {}
+            if announcer and guild_cfg.get("enable"):
+                clip = await announcer.build_announcement(self, track, guild_cfg)
+
             try:
-                await self.play(track, start=track.position)
+                if clip:
+                    # Stash the real track before playing the clip so the
+                    # controller/status/IPC updates below resolve to it.
+                    self._pending_track = track
+                    await self.play(clip)
+                else:
+                    await self.play(track, start=track.position)
             except Exception as e:
+                self._pending_track = None
                 self._logger.error(f"Something went wrong while playing music in {self.guild.name}({self.guild.id})", exc_info=e)
                 await asyncio.sleep(5)
                 return await self.do_next()
@@ -566,6 +597,7 @@ class Player(VoiceProtocol):
             
     async def stop(self):
         """Stops the currently playing track."""
+        self._pending_track = None
         self._current = None
         await self.send(method=RequestMethod.PATCH, data={'encodedTrack': None})
 
@@ -618,6 +650,8 @@ class Player(VoiceProtocol):
             await self._node.yt_ratelimit.handle_request()
 
         self._current = track
+        if self._pending_track is track:
+            self._pending_track = None
 
         self._logger.debug(f"Player in {self.guild.name}({self.guild.id}) playing {track.title} from uri {track.uri} with a length of {track.length}")
         return self._current

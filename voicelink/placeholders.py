@@ -46,9 +46,10 @@ def ensure_track(func) -> Callable:
     return wrapper
 
 class PlayerPlaceholder:
-    def __init__(self, bot: commands.Bot, player: Player = None) -> None:
+    def __init__(self, bot: commands.Bot, player: Player = None, track: Track = None) -> None:
         self.bot: commands.Bot = bot
         self.player: Player = player
+        self._track: Track = track
 
         self.variables = {
             "channel_name": self.channel_name,
@@ -79,7 +80,7 @@ class PlayerPlaceholder:
         }
         
     def get_current(self) -> Track:
-        return self.player.current if self.player else None
+        return self._track or (self.player.current if self.player else None)
 
     def channel_name(self) -> str:
         if not self.player:

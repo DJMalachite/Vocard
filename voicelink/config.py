@@ -99,6 +99,7 @@ class Config:
         self.ipc_client: Dict[str, Union[str, bool, int]] = settings.get("ipc_client", {})
         self.playlist_settings: Dict[str, Union[str, int]] = settings.get("playlist_settings", {})
         self.timer_settings: Dict[str, int] = settings.get("timer_settings", {})
+        self.announce_settings: Dict[str, Any] = settings.get("announce_settings", {})
         self.version: str = settings.get("version", "")
         
         self.initialized = True

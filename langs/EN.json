@@ -125,7 +125,9 @@
             "controllerMsgToggled": "You now have `{0}` messages from the music controller.",
             "silentMsgToggled": "You have {0} silent messaging.",
             "resetDone": "Reset `{0}` to server defaults.",
-            "resetNotFound": "Invalid setting name. Please use one of the following: {0}"
+            "resetNotFound": "Invalid setting name. Please use one of the following: {0}",
+            "announceNotConfigured": "TTS announcements are not configured by the bot owner.",
+            "announceUpdated": "Updated TTS announcement settings: `{0}`."
         },
         "menu": "Server Settings | {0}",
         "basic": {
@@ -142,6 +144,10 @@
         "permissions": {
             "title": "✨ Permissions:",
             "value": "```{0} Administrator\n{1} Manage_Guild\n{2} Manage_Channel\n{3} Manage_Messages```"
+        },
+        "tts": {
+            "title": "🔊 TTS Announcements",
+            "value": "```Status: {0}\nMode: {1}```\n**Template:**\n```{2}```\n**AI Prompt:**\n```{3}```"
         }
     },
     "ping": {

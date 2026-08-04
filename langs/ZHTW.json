@@ -125,7 +125,9 @@
             "controllerMsgToggled": "您現在已 `{0}` 來自音樂控制器的訊息。",
             "silentMsgToggled": "您已 {0} 靜音訊息。",
             "resetDone": "`{0}` 已重置為伺服器預設值。",
-            "resetNotFound": "無效的設定名稱。請使用以下之一: {0}"
+            "resetNotFound": "無效的設定名稱。請使用以下之一: {0}",
+            "announceNotConfigured": "機器人擁有者尚未設定 TTS 語音播報。",
+            "announceUpdated": "已更新 TTS 語音播報設定：`{0}`。"
         },
         "menu": "伺服器設定 | {0}",
         "basic": {
@@ -142,6 +144,10 @@
         "permissions": {
             "title": "✨ 權限:",
             "value": "```{0} 管理員\n{1} 管理伺服器\n{2} 管理頻道\n{3} 管理訊息```"
+        },
+        "tts": {
+            "title": "🔊 TTS 語音播報",
+            "value": "```狀態: {0}\n模式: {1}```\n**模板:**\n```{2}```\n**AI 提示詞:**\n```{3}```"
         }
     },
     "ping": {

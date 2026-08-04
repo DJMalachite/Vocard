@@ -125,7 +125,9 @@
             "controllerMsgToggled": "您现在已 `{0}` 来自音乐控制器的消息。",
             "silentMsgToggled": "您已 {0} 静默消息。",
             "resetDone": "`{0}` 已重置为服务器默认值。",
-            "resetNotFound": "无效的设置名称。请使用以下之一: {0}"
+            "resetNotFound": "无效的设置名称。请使用以下之一: {0}",
+            "announceNotConfigured": "机器人所有者尚未配置 TTS 语音播报。",
+            "announceUpdated": "已更新 TTS 语音播报设置：`{0}`。"
         },
         "menu": "服务器设置 | {0}",
         "basic": {
@@ -142,6 +144,10 @@
         "permissions": {
             "title": "✨ 权限:",
             "value": "```{0} 管理员\n{1} 管理服务器\n{2} 管理频道\n{3} 管理消息```"
+        },
+        "tts": {
+            "title": "🔊 TTS 语音播报",
+            "value": "```状态: {0}\n模式: {1}```\n**模板:**\n```{2}```\n**AI 提示词:**\n```{3}```"
         }
     },
     "ping": {

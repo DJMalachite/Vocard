@@ -125,7 +125,9 @@
             "controllerMsgToggled": "Bây giờ bạn đã `{0}` tin nhắn từ bộ điều khiển nhạc.",
             "silentMsgToggled": "Bạn có {0} tin nhắn im lặng.",
             "resetDone": "Reset `{0}` to server defaults.",
-            "resetNotFound": "Tên cài đặt không hợp lệ. Vui lòng sử dụng một trong các tùy chọn sau: {0}"
+            "resetNotFound": "Tên cài đặt không hợp lệ. Vui lòng sử dụng một trong các tùy chọn sau: {0}",
+            "announceNotConfigured": "Thông báo TTS chưa được chủ bot cấu hình.",
+            "announceUpdated": "Đã cập nhật cài đặt thông báo TTS: `{0}`."
         },
         "menu": "Cài Đặt Máy Chủ | {0}",
         "basic": {
@@ -142,6 +144,10 @@
         "permissions": {
             "title": "✨ Quyền hạn:",
             "value": "```{0} Quản Trị Viên\n{1} Quản_Lý_Guild\n{2} Quản_Lý_Kênh\n{3} Quản_Lý_Tin_Nhắn```"
+        },
+        "tts": {
+            "title": "🔊 Thông báo TTS",
+            "value": "```Trạng thái: {0}\nChế độ: {1}```\n**Mẫu:**\n```{2}```\n**Prompt AI:**\n```{3}```"
         }
     },
     "ping": {

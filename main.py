@@ -31,7 +31,7 @@ import function as func
 
 from discord.ext import commands
 from logging.handlers import TimedRotatingFileHandler
-from voicelink import Config, LangHandler, MongoDBHandler, IPCClient, VoicelinkException
+from voicelink import Config, LangHandler, MongoDBHandler, IPCClient, VoicelinkException, Announcer
 from voicelink.utils import dispatch_message
 
 class Translator(discord.app_commands.Translator):
@@ -127,6 +127,15 @@ class Vocard(commands.Bot):
                 await self.ipc_client.connect()
             except Exception as e:
                 func.logger.error(f"Cannot connected to dashboard! - Reason: {e}")
+
+        self.announcer = None
+        if bot_config.announce_settings.get("enable", False):
+            try:
+                self.announcer = Announcer(self, bot_config.announce_settings)
+                await self.announcer.start()
+            except Exception as e:
+                func.logger.error("Failed to start TTS announcer.", exc_info=e)
+                self.announcer = None
 
         # Update version tracking
         if not bot_config.version or bot_config.version != update.__version__:

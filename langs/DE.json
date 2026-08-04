@@ -125,7 +125,9 @@
             "controllerMsgToggled": "Nachrichten vom Musik-Controller wurden erfolgreich `{0}`",
             "silentMsgToggled": "Sie haben {0} stille Nachrichten.",
             "resetDone": "`{0}` wurde auf die Standardwerte des Servers zurückgesetzt.",
-            "resetNotFound": "Ungültiger Einstellungsname. Bitte verwende eine der folgenden Einstellungen: {0}"
+            "resetNotFound": "Ungültiger Einstellungsname. Bitte verwende eine der folgenden Einstellungen: {0}",
+            "announceNotConfigured": "TTS-Ansagen wurden vom Bot-Besitzer nicht konfiguriert.",
+            "announceUpdated": "TTS-Ansage-Einstellungen aktualisiert: `{0}`."
         },
         "menu": "Servereinstellungen | {0}",
         "basic": {
@@ -142,6 +144,10 @@
         "permissions": {
             "title": "✨ Berechtigungen:",
             "value": "```{0} Administrator\n{1} Guild verwalten\n{2} Kanal verwalten\n{3} Manage_Messages```"
+        },
+        "tts": {
+            "title": "🔊 TTS-Ansagen",
+            "value": "```Status: {0}\nModus: {1}```\n**Vorlage:**\n```{2}```\n**KI-Prompt:**\n```{3}```"
         }
     },
     "ping": {

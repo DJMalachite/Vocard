@@ -52,7 +52,8 @@ _RESET_LABELS: dict[str, str] = {
     "silent messages": "silent_msg",
     "stage announce template": "stage_announce_template",
     "song request channel": "music_request_channel",
-    "custom controller embeds": "default_controller"
+    "custom controller embeds": "default_controller",
+    "tts announcements": "tts_announce"
 }
          
 def status_icon(status: bool) -> str:
@@ -177,6 +178,10 @@ class Settings(commands.Cog, name="settings"):
         if stage_template := settings.get("stage_announce_template"):
             embed.add_field(name=texts[5], value=f"```{stage_template}```", inline=False)
 
+        if (tts_cfg := settings.get("tts_announce")) and tts_cfg.get("enable"):
+            tts_title = await LangHandler.get_lang(ctx.guild.id, "settings.tts.title")
+            embed.add_field(name=tts_title, value=f"```Mode: {tts_cfg.get('mode', 'simple')}```", inline=False)
+
         perms = ctx.guild.me.guild_permissions
         embed.add_field(name=texts[6], value=texts[7].format(
                 status_icon(perms.administrator),
@@ -275,6 +280,55 @@ class Settings(commands.Cog, name="settings"):
         await MongoDBHandler.update_settings(ctx.guild.id, {"$set": {'stage_announce_template': template}})
         await send_localized_message(ctx, "voice.stageChannel.setAnnounceTemplate")
 
+    @settings.command(name="announce", aliases=get_aliases("announce"))
+    @app_commands.describe(
+        mode="Disable announcements or choose how announcement text is produced.",
+        template="Simple-mode template (supports @@variables@@).",
+        ai_prompt="AI-mode prompt (supports @@variables@@)."
+    )
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Disabled", value="off"),
+        app_commands.Choice(name="Simple", value="simple"),
+        app_commands.Choice(name="AI", value="ai")
+    ])
+    @commands.has_permissions(manage_guild=True)
+    @commands.dynamic_cooldown(cooldown_check, commands.BucketType.guild)
+    async def announce(self, ctx: commands.Context, mode: str = None, template: str = None, ai_prompt: str = None):
+        "Configure TTS voice announcements played before each song."
+        announce_config = voicelink.Config().announce_settings
+        if not announce_config.get("enable"):
+            return await send_localized_message(ctx, "settings.actions.announceNotConfigured", ephemeral=True)
+
+        updates = {}
+        if mode:
+            updates["tts_announce.enable"] = mode != "off"
+            if mode != "off":
+                updates["tts_announce.mode"] = mode
+        if template:
+            updates["tts_announce.template"] = template
+        if ai_prompt:
+            updates["tts_announce.ai_prompt"] = ai_prompt
+
+        if not updates:
+            settings = await MongoDBHandler.get_settings(ctx.guild.id)
+            guild_cfg = settings.get("tts_announce") or {}
+            texts = await LangHandler.get_lang(ctx.guild.id, "settings.tts.title", "settings.tts.value")
+            embed = discord.Embed(title=texts[0], color=voicelink.Config().embed_color)
+            embed.description = texts[1].format(
+                await LangHandler.get_lang(ctx.guild.id, "common.status.enabled" if guild_cfg.get("enable") else "common.status.disabled"),
+                guild_cfg.get("mode", "simple"),
+                guild_cfg.get("template") or announce_config.get("default_template", ""),
+                guild_cfg.get("ai_prompt") or announce_config.get("default_ai_prompt", "")
+            )
+            return await dispatch_message(ctx, embed)
+
+        await MongoDBHandler.update_settings(ctx.guild.id, {"$set": updates})
+        player: voicelink.Player = ctx.guild.voice_client
+        if player:
+            fresh = await MongoDBHandler.get_settings(ctx.guild.id)
+            player.settings["tts_announce"] = fresh.get("tts_announce", {})
+        await send_localized_message(ctx, "settings.actions.announceUpdated", ", ".join(key.split(".", 1)[1] for key in updates))
+
     @settings.command(name="setupchannel", aliases=get_aliases("setupchannel"))
     @app_commands.describe(
         channel="Provide a request channel. If not, a text channel will be generated."
@@ -332,6 +386,8 @@ class Settings(commands.Cog, name="settings"):
             await player.set_volume(100, ctx.author)
         elif setting_key == "duplicate_track" and player:
             player.queue._allow_duplicate = True
+        elif setting_key == "tts_announce" and player:
+            player.settings.pop("tts_announce", None)
         await send_localized_message(ctx, "settings.actions.resetDone", setting.capitalize())
         
     @app_commands.command(name="debug")

@@ -60,6 +60,30 @@
         "max_tracks_per_playlist": 500,
         "default_playlist_name": "Favourite"
     },
+    "announce_settings": {
+        "enable": false,
+        "piper": {
+            "url": "http://localhost:5000",
+            "voice": "en_US-lessac-medium"
+        },
+        "server": {
+            "host": "0.0.0.0",
+            "port": 8100,
+            "public_url": "http://host.docker.internal:8100"
+        },
+        "ai": {
+            "base_url": "https://api.openai.com/v1",
+            "api_key": "",
+            "model": "gpt-4o-mini"
+        },
+        "default_template": "Up next: @@track_name@@ by @@track_author@@",
+        "default_ai_prompt": "You are an energetic radio DJ. In one short sentence of at most 25 words, announce the next song: @@track_name@@ by @@track_author@@, requested by @@track_requester_name@@. Reply with only the announcement text.",
+        "max_text_length": 300,
+        "timeouts": {
+            "ai": 10,
+            "piper": 10
+        }
+    },
     "sources_settings": {
         "youtube": {
             "emoji": "<:youtube:826661982760992778>",

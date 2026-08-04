@@ -125,7 +125,9 @@
             "controllerMsgToggled": "Ahora tiene `{0}` mensajes del controlador de música.",
             "silentMsgToggled": "Tienes {0} mensajes silenciosos.",
             "resetDone": "Reset `{0}` to server defaults.",
-            "resetNotFound": "Nombre de opción inválido. Por favor, use una de las siguientes opciones: {0}"
+            "resetNotFound": "Nombre de opción inválido. Por favor, use una de las siguientes opciones: {0}",
+            "announceNotConfigured": "Los anuncios TTS no han sido configurados por el propietario del bot.",
+            "announceUpdated": "Configuración de anuncios TTS actualizada: `{0}`."
         },
         "menu": "Configuración del servidor | {0}",
         "basic": {
@@ -142,6 +144,10 @@
         "permissions": {
             "title": "✨ Permisos:",
             "value": "```{0} Administrador\n{1} Administrar servidor\n{2} Administrar canal\n{3} Administrar mensajes```"
+        },
+        "tts": {
+            "title": "🔊 Anuncios TTS",
+            "value": "```Estado: {0}\nModo: {1}```\n**Plantilla:**\n```{2}```\n**Prompt de IA:**\n```{3}```"
         }
     },
     "ping": {
