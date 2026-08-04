@@ -76,7 +76,7 @@ class Config:
         settings = settings or {}
         
         self.token: str = settings.get("token") or os.getenv("TOKEN")
-        self.client_id: int = int(settings.get("client_id", 0)) or int(os.getenv("CLIENT_ID"))
+        self.client_id: int = int(settings.get("client_id") or os.getenv("CLIENT_ID") or 0)
         self.genius_token: str = settings.get("genius_token") or os.getenv("GENIUS_TOKEN")
         self.mongodb_url: str = settings.get("mongodb_url") or os.getenv("MONGODB_URL")
         self.mongodb_name: str = settings.get("mongodb_name") or os.getenv("MONGODB_NAME")

@@ -102,11 +102,15 @@ downloaded automatically on first use.
 
 | From → To | Address |
 |---|---|
+| Bot (Docker, same compose network) → Piper | `http://piper:5000` |
 | Bot (host) → Piper (Docker, port published) | `http://localhost:5000` |
-| Bot (Docker) → Piper (same compose network) | `http://piper:5000` |
+| Lavalink (Docker) → Bot (same compose network) | `public_url: http://<bot-service-name>:8100` (e.g. `http://vocard:8100`) |
 | Lavalink (Docker Desktop, Win/Mac) → Bot (host) | `public_url: http://host.docker.internal:8100` |
 | Lavalink (Docker on Linux) → Bot (host) | add `extra_hosts: ["host.docker.internal:host-gateway"]` to the lavalink service, then use `http://host.docker.internal:8100` |
-| Lavalink (Docker) → Bot (same compose network) | `public_url: http://<bot-service-name>:8100` |
+
+When everything (including the bot) runs in one compose stack, use the service names:
+`mongodb_url: mongodb://mongodb:27017`, node host `lavalink`, piper `http://piper:5000`,
+`public_url: http://vocard:8100`.
 
 ## 3. Enable it in a guild
 

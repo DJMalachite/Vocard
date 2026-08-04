@@ -1,6 +1,33 @@
-# Development stack: Lavalink + MongoDB + Piper TTS.
-# The bot itself runs natively on the host (python main.py).
+# Full development stack: bot + Lavalink + MongoDB + Piper TTS.
+#
+# Quickstart:
+#   1. cp .env.example .env      (fill in TOKEN and CLIENT_ID)
+#   2. docker compose up -d --build
+#
+# settings.json is created automatically from settings.docker.json on first
+# boot. The project directory is mounted into the bot container, so code
+# changes only need `docker compose restart vocard` (rebuild only when
+# requirements.txt changes).
 services:
+  vocard:
+    build: .
+    container_name: vocard-bot
+    restart: unless-stopped
+    command: sh /app/docker-entrypoint.sh
+    environment:
+      - TOKEN=${TOKEN:-}
+      - CLIENT_ID=${CLIENT_ID:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - .:/app
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      lavalink:
+        condition: service_started
+      piper:
+        condition: service_started
+
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
     container_name: vocard-lavalink
@@ -9,10 +36,6 @@ services:
       - _JAVA_OPTIONS=-Xmx512M
     volumes:
       - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-    # Lets Lavalink reach the bot's announce server on the host via
-    # host.docker.internal (required on Linux; harmless on Docker Desktop).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "2333:2333"
 
@@ -20,6 +43,11 @@ services:
     image: mongo:7
     container_name: vocard-mongo
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     volumes:
       - mongo-data:/data/db
     ports:

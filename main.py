@@ -155,6 +155,9 @@ class Vocard(commands.Bot):
         func.logger.info(f"Discord Version: {discord.__version__}")
         func.logger.info(f"Python Version: {sys.version}")
         func.logger.info("------------------")
+        func.logger.info(f"Invite URL (requires bot + applications.commands scopes for slash commands):")
+        func.logger.info(f"https://discord.com/oauth2/authorize?client_id={self.user.id}&permissions=2184260928&scope=bot%20applications.commands")
+        func.logger.info("------------------")
 
         bot_config.client_id = self.user.id
         LangHandler._local_langs.clear()

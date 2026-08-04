@@ -23,6 +23,8 @@ Tests need no bot token, database, or network — they are static checks. The ru
 
 Runtime configuration lives in `settings.json` (gitignored); `settings Example.json` is the template. `function.py` raises at import time if `settings.json` is missing, so the bot and anything importing `function` won't start without it.
 
+For a full local dev stack (bot + Lavalink + MongoDB + Piper TTS in Docker): copy `.env.example` to `.env`, fill in `TOKEN`/`CLIENT_ID`, then `docker compose -f docker-compose.dev.yml up -d --build`. The entrypoint creates `settings.json` from `settings.docker.json` (service-name endpoints) on first boot; the project dir is bind-mounted, so code changes only need a `docker compose restart vocard`.
+
 ## Architecture
 
 Three layers: `main.py` (bootstrap), `cogs/` (commands), and `voicelink/` (a self-contained Lavalink client library plus the bot's domain logic).
