@@ -99,9 +99,12 @@ class AnnounceServer:
 
 
 class PiperClient:
-    """Minimal client for a Piper HTTP server: POST text, receive WAV bytes."""
+    """Minimal client for the piper-tts HTTP server: POST JSON to /synthesize, receive WAV bytes."""
 
     def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 10):
+        url = url.rstrip("/")
+        if not url.endswith("/synthesize"):
+            url += "/synthesize"
         self._url: str = url
         self._voice: Optional[str] = voice
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)

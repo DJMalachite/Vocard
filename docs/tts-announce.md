@@ -47,11 +47,11 @@ volumes:
   piper-voices:
 ```
 
-Smoke-test it (the request shape can vary slightly between piper versions — verify this
-once and it's the only external integration point that may need adjusting):
+Smoke-test it (piper-tts 1.6.x serves synthesis at `POST /synthesize`; the bot appends
+that path to `piper.url` automatically):
 
 ```bash
-curl -X POST -H "Content-Type: application/json" -d '{"text":"hello world"}' http://localhost:5000 -o test.wav
+curl -X POST -H "Content-Type: application/json" -d '{"text":"hello world"}' http://localhost:5000/synthesize -o test.wav
 ```
 
 If `test.wav` plays, you're done. Browse voices at the

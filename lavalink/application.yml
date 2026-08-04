@@ -5,7 +5,7 @@ server:
 lavalink:
   plugins:
     # YouTube support is a plugin in Lavalink v4 (built-in source is deprecated).
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.13.3"
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       snapshot: false
   server:
     password: "youshallnotpass"
