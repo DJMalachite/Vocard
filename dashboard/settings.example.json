@@ -1,0 +1,19 @@
+{
+    "host": "0.0.0.0",
+    "port": "8000",
+    "password": "vocard-dev-ipc",
+    "client_id": "YOUR_DISCORD_APPLICATION_ID",
+    "client_secret_id": "YOUR_DISCORD_OAUTH2_CLIENT_SECRET",
+    "secret_key": "CHANGE_ME_TO_A_LONG_RANDOM_STRING",
+    "redirect_url": "http://127.0.0.1:8000/callback",
+    "logging": {
+        "file": {
+            "path": "./logs",
+            "enable": true
+        },
+        "level": {
+            "dashboard": "INFO"
+        },
+        "max_history": 30
+    }
+}

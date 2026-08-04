@@ -7,6 +7,10 @@ lavalink:
     # YouTube support is a plugin in Lavalink v4 (built-in source is deprecated).
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
       snapshot: false
+    # Spotify/Apple Music/Deezer metadata support (playback mirrors to YouTube).
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
   server:
     password: "youshallnotpass"
     sources:
@@ -33,6 +37,21 @@ plugins:
       - ANDROID_VR
       - WEB
       - WEBEMBEDDED
+  lavasrc:
+    # How LavaSrc resolves actual audio for Spotify tracks (metadata from
+    # Spotify, playback mirrored from YouTube).
+    providers:
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: true
+    spotify:
+      # Anonymous tokens from the spotify-tokener container - no Spotify
+      # client id/secret needed.
+      customTokenEndpoint: "http://spotify-tokener:49152/api/token"
+      countryCode: "US"
+      playlistLoadLimit: 6
+      albumLoadLimit: 6
 
 logging:
   level:

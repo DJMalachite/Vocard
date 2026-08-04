@@ -177,3 +177,5 @@ cython_debug/
 # Custom file
 settings.json
 logs
+dashboard/settings.json
+

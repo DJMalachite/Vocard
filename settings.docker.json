@@ -46,11 +46,11 @@
     "default_search_platform": "youtube",
     "lyrics_platform": "lrclib",
     "ipc_client": {
-        "host": "127.0.0.1",
+        "host": "vocard-dashboard",
         "port": 8000,
-        "password": "YOUR_PASSWORD",
+        "password": "vocard-dev-ipc",
         "secure": false,
-        "enable": false
+        "enable": true
     },
     "timer_settings": {
         "bot_activity_update": 600,

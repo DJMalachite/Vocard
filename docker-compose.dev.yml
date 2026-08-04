@@ -27,6 +27,26 @@ services:
         condition: service_started
       piper:
         condition: service_started
+      vocard-dashboard:
+        condition: service_started
+
+  vocard-dashboard:
+    image: ghcr.io/chocomeow/vocard-dashboard:latest
+    container_name: vocard-dashboard
+    restart: unless-stopped
+    volumes:
+      # cp dashboard/settings.example.json dashboard/settings.json first,
+      # then fill in the Discord OAuth2 credentials.
+      - ./dashboard/settings.json:/app/settings.json
+    ports:
+      - "8000:8000"
+
+  spotify-tokener:
+    image: ghcr.io/topi314/spotify-tokener:master
+    container_name: vocard-spotify-tokener
+    restart: unless-stopped
+    environment:
+      - SPOTIFY_TOKENER_ADDR=0.0.0.0:49152
 
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
