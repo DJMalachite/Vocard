@@ -674,15 +674,21 @@ class Player(VoiceProtocol):
         if not self._node:
             return track
 
+        # position/endTime must be numbers: Lavalink tolerates numeric strings
+        # but NodeLink rejects the whole payload.
         data = {
             "encodedTrack": track.track_id,
-            "position": str(start or 0)
+            "position": int(start or 0)
         }
 
         if end or track.end_time:
-            data["endTime"] = str(end or track.end_time)
-        
-        await self.send(method=RequestMethod.PATCH, query=f"noReplace={ignore_if_playing}", data=data)
+            data["endTime"] = int(end or track.end_time)
+
+        await self.send(
+            method=RequestMethod.PATCH,
+            query=f"noReplace={str(ignore_if_playing).lower()}",
+            data=data
+        )
         if self._node.yt_ratelimit:
             await self._node.yt_ratelimit.handle_request()
 
@@ -780,7 +786,7 @@ class Player(VoiceProtocol):
         if position < 0 or position > self._current.length:
             raise TrackInvalidPosition("Seek position must be between 0 and the track length")
 
-        await self.send(method=RequestMethod.PATCH, data={"position": position})
+        await self.send(method=RequestMethod.PATCH, data={"position": int(position)})
         if self.is_ipc_connected:
             await self.send_ws({"op": "updatePosition", "position": position}, requester)
         

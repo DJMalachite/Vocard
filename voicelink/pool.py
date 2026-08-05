@@ -271,8 +271,16 @@ class Node:
             json=data
         ) as resp:
             if resp.status >= 300:
-                raise NodeException(f"Getting errors from Lavalink REST api")
-            
+                body = (await resp.text())[:500]
+                self._logger.warning(
+                    f"Node [{self._identifier}] rejected {method.value.upper()} {query} "
+                    f"with status {resp.status}: {body}"
+                )
+                raise NodeException(
+                    f"Getting errors from Lavalink REST api (status {resp.status})"
+                )
+
+
             if method == RequestMethod.DELETE:
                 return await resp.json(content_type=None)
 
