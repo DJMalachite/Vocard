@@ -95,10 +95,11 @@
         },
         "transition": {
             "mode": "overlay",
-            "lead": 8,
+            "lead": 20,
             "fade_seconds": 5,
             "fade_to": 35,
-            "overlay_volume": 100
+            "overlay_volume": 100,
+            "overlay_tail": 2
         }
     },
     "sources_settings": {

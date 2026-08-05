@@ -201,11 +201,21 @@ real radio DJ talking over the outro.
 The default stack (`docker-compose.dev.yml`) uses NodeLink, and `settings.docker.json` ships with:
 
 ```json
-"transition": { "mode": "overlay", "lead": 8, "fade_seconds": 5, "fade_to": 35, "overlay_volume": 100 }
+"transition": { "mode": "overlay", "lead": 20, "fade_seconds": 5, "fade_to": 35, "overlay_volume": 100, "overlay_tail": 2 }
 ```
 
 - `overlay_volume` — announcement loudness (0–100, sent to NodeLink as a 0.0–1.0 mix volume)
 - `fade_to` — how far the music ducks under the announcement while it plays
+- `lead` — how many seconds before the end to start preparing the clip. This is a *budget*,
+  not the announcement's start time: generation has to finish comfortably before the clip is
+  due to play, so give it room
+- `overlay_tail` — seconds of music that should still play after the announcement finishes
+
+The announcement is scheduled from its own measured duration, so it finishes `overlay_tail`
+seconds before the song ends. This matters because the server clears every mix layer the moment
+the main track ends — an announcement still talking at that point gets cut off mid-sentence.
+If a song is too short to fit the announcement in its outro, it is played over the **next**
+song's intro instead rather than being truncated.
 
 The bot ducks the music, posts the clip as a mix layer, and restores the volume when NodeLink
 emits `MixEndedEvent` (with a timer as a failsafe). Mixing must be enabled server-side —

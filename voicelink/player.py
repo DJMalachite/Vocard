@@ -1121,6 +1121,37 @@ class Player(VoiceProtocol):
             self._logger.warning(f"Pre-generated announcement failed in {self.guild.name}({self.guild.id}): {e}")
             return None
 
+    async def _overlay_over_outro(self, track: Track, clip: Track, config: dict, duck_to: int) -> bool:
+        """Mixes the clip over the end of `track`, finishing before it does.
+
+        The server clears every mix layer when the main track ends, so an
+        announcement still talking at that moment is cut off mid-sentence. We
+        know how long the clip runs, so we start it late enough to talk over
+        the outro but early enough to finish first.
+        """
+        clip_ms = clip.end_time or clip.length or 0
+        tail_ms = max(0, config.get("overlay_tail", 2)) * 1000
+
+        if clip_ms:
+            remaining = track.length - self._interp_position(track)
+
+            # Too little of the track left to fit the announcement: leave it
+            # for do_next, which plays it over the next song's intro instead.
+            if remaining < clip_ms * 0.75:
+                self._logger.debug(
+                    f"Player in {self.guild.name}({self.guild.id}) has only {remaining:.0f}ms left for a "
+                    f"{clip_ms}ms announcement; overlaying it on the next track instead."
+                )
+                return False
+
+            # Hold until the announcement would finish just before the song.
+            while (track.length - self._interp_position(track)) > (clip_ms + tail_ms):
+                await asyncio.sleep(0.25)
+                if self._current is not track:
+                    return False
+
+        return await self._play_overlay(clip, duck_to)
+
     def _overlay_available(self) -> bool:
         """Whether announcements should be mixed over the music."""
         return (
@@ -1230,9 +1261,12 @@ class Player(VoiceProtocol):
             # Overlay mode plays the clip *over* the outgoing track. When the
             # node has no mixer we silently fall through to the fade, keeping
             # the pre-generated clip for do_next.
-            if self._overlay_available() and await self._play_overlay(clip, fade_to):
-                self._discard_pregen()
-                self._commit_announcement()
+            if self._overlay_available():
+                if await self._overlay_over_outro(track, clip, config, fade_to):
+                    self._discard_pregen()
+                    self._commit_announcement()
+                # Either way the clip stays available: if there was not enough
+                # of the track left, do_next plays it over the next song.
                 return
 
             if fade_ms <= 0 or fade_to >= self._volume:
