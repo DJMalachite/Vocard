@@ -23,6 +23,8 @@ SOFTWARE.
 
 from __future__ import annotations
 
+import logging
+
 from typing import Optional, List, TYPE_CHECKING
 from tldextract import extract
 from discord import Member
@@ -31,6 +33,8 @@ from .enums import SearchType, TrackRecType
 from .config import Config
 from .utils import format_ms
 from .transformer import encode, decode
+
+logger = logging.getLogger("vocard.objects")
 
 if TYPE_CHECKING:
     from .pool import Node
@@ -116,7 +120,14 @@ class Track:
             return []
         
         query = rec_type.format(track_id=self.identifier)
-        tracks = await node.get_tracks(query=query, requester=node.bot.user)
+        try:
+            tracks = await node.get_tracks(query=query, requester=node.bot.user)
+        except Exception as e:
+            # Recommendations are a nicety: a rate-limited or slow source must
+            # not take down autoplay, which calls this from do_next.
+            logger.warning(f"Could not fetch recommendations for '{self.title}': {e}")
+            return []
+
         if not tracks:
             return []
         
