@@ -1,13 +1,19 @@
-# Full development stack: bot + Lavalink + MongoDB + Piper TTS.
+# Full development stack: bot + NodeLink + MongoDB + Piper TTS + dashboard.
 #
 # Quickstart:
 #   1. cp .env.example .env      (fill in TOKEN and CLIENT_ID)
-#   2. docker compose up -d --build
+#   2. cp dashboard/settings.example.json dashboard/settings.json
+#   3. docker compose up -d --build
 #
-# settings.json is created automatically from settings.docker.json on first
-# boot. The project directory is mounted into the bot container, so code
-# changes only need `docker compose restart vocard` (rebuild only when
-# requirements.txt changes).
+# NodeLink replaces Lavalink: it speaks the same v4 API but has built-in
+# sources (no youtube-plugin/LavaSrc) and an audio mixer, which is what lets
+# TTS announcements play *over* the outgoing song. To go back to Lavalink,
+# see docker-compose.lavalink.yml.
+#
+# settings.json is created from settings.docker.json on first boot. The
+# project directory is mounted into the bot container, so code changes only
+# need `docker compose restart vocard` (rebuild only when requirements.txt
+# changes).
 services:
   vocard:
     build: .
@@ -25,41 +31,49 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
-      lavalink:
+      nodelink:
         condition: service_started
       piper:
         condition: service_started
       vocard-dashboard:
         condition: service_started
 
-  vocard-dashboard:
-    image: ghcr.io/chocomeow/vocard-dashboard:latest
-    container_name: vocard-dashboard
-    restart: unless-stopped
-    volumes:
-      # cp dashboard/settings.example.json dashboard/settings.json first,
-      # then fill in the Discord OAuth2 credentials.
-      - ./dashboard/settings.json:/app/settings.json
-    ports:
-      - "8110:8110"
-
-  spotify-tokener:
-    image: ghcr.io/topi314/spotify-tokener:master
-    container_name: vocard-spotify-tokener
+  nodelink:
+    image: performanc/nodelink:3.8.0
+    container_name: vocard-nodelink
     restart: unless-stopped
     environment:
-      - SPOTIFY_TOKENER_ADDR=0.0.0.0:49152
-
-  lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:4
-    container_name: vocard-lavalink
-    restart: unless-stopped
-    environment:
-      - _JAVA_OPTIONS=-Xmx512M
-    volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - NODELINK_SERVER_HOST=0.0.0.0
+      - NODELINK_SERVER_PORT=2333
+      - NODELINK_SERVER_PASSWORD=youshallnotpass
+      # Audio mixer - required for overlay announcements.
+      - NODELINK_MIX_ENABLED=true
+      - NODELINK_MIX_DEFAULTVOLUME=0.8
+      - NODELINK_MIX_MAXLAYERSMIX=5
+      - NODELINK_MIX_AUTOCLEANUP=true
+      # Sources. YouTube playback needs a cipher service (self-hosted below).
+      - NODELINK_SOURCES_YOUTUBE_ENABLED=true
+      - NODELINK_SOURCES_YOUTUBE_CIPHER_URL=http://yt-cipher:8001/api
+      - NODELINK_SOURCES_SOUNDCLOUD_ENABLED=true
+      - NODELINK_SOURCES_BANDCAMP_ENABLED=true
+      - NODELINK_SOURCES_TWITCH_ENABLED=true
+      - NODELINK_SOURCES_VIMEO_ENABLED=true
+      # The announcement clips are served over plain HTTP by the bot.
+      - NODELINK_SOURCES_HTTP_ENABLED=true
+      # Spotify: your own app credentials, or leave blank to use NodeLink's
+      # default anonymous token service.
+      - NODELINK_SOURCES_SPOTIFY_ENABLED=true
+      - NODELINK_SOURCES_SPOTIFY_CLIENTID=${SPOTIFY_CLIENT_ID:-}
+      - NODELINK_SOURCES_SPOTIFY_CLIENTSECRET=${SPOTIFY_CLIENT_SECRET:-}
     ports:
       - "2333:2333"
+
+  yt-cipher:
+    image: ghcr.io/kikkia/yt-cipher:master
+    container_name: vocard-yt-cipher
+    restart: unless-stopped
+    expose:
+      - "8001"
 
   mongodb:
     image: mongo:7
@@ -84,6 +98,17 @@ services:
       - piper-voices:/data
     ports:
       - "5000:5000"
+
+  vocard-dashboard:
+    image: ghcr.io/chocomeow/vocard-dashboard:latest
+    container_name: vocard-dashboard
+    restart: unless-stopped
+    volumes:
+      # cp dashboard/settings.example.json dashboard/settings.json first,
+      # then fill in the Discord OAuth2 credentials.
+      - ./dashboard/settings.json:/app/settings.json
+    ports:
+      - "8110:8110"
 
 volumes:
   mongo-data:

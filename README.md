@@ -24,6 +24,9 @@ The bot can announce the next song in the voice channel using a local
 
 Features:
 
+* **True overlay** — running on [NodeLink](https://github.com/PerformanC/NodeLink) instead of
+  Lavalink, the announcement plays *over* the outgoing song's outro like a real radio DJ, with
+  the music ducked underneath. Falls back to fade mode automatically on servers without a mixer
 * **Smooth transitions** — the clip is generated *before* the song ends and the music fades down
   into it, so there is no gap and no abrupt cut
 * **Frequency and cooldown** — announce every Nth song, and/or at most once every X minutes
@@ -38,14 +41,19 @@ guide: **[docs/tts-announce.md](docs/tts-announce.md)**.
 
 ### 🐳 Docker development stack
 
-`docker-compose.dev.yml` brings up the bot, Lavalink (with the YouTube plugin and LavaSrc for
-Spotify), MongoDB, Piper TTS, the [dashboard](https://github.com/ChocoMeow/Vocard-Dashboard) and
-a Spotify tokener — all wired together by service name.
+`docker-compose.dev.yml` brings up the bot, [NodeLink](https://github.com/PerformanC/NodeLink)
+(a Lavalink-v4-compatible server with built-in sources and an audio mixer), MongoDB, Piper TTS,
+a YouTube cipher service and the [dashboard](https://github.com/ChocoMeow/Vocard-Dashboard) —
+all wired together by service name.
 
 ```bash
-cp .env.example .env          # fill in TOKEN and CLIENT_ID
+cp .env.example .env                                  # fill in TOKEN and CLIENT_ID
+cp dashboard/settings.example.json dashboard/settings.json
 docker compose -f docker-compose.dev.yml up -d --build
 ```
+
+Prefer Lavalink? `docker-compose.lavalink.yml` is the same stack with Lavalink (plus the
+youtube-plugin and LavaSrc for Spotify) instead of NodeLink.
 
 `settings.json` is created from `settings.docker.json` on first boot, so no config editing is
 needed to get started. The project directory is mounted into the bot container, so code changes
@@ -74,7 +82,9 @@ only need `docker compose restart vocard` (rebuild only when `requirements.txt` 
 
 ## Requirements
 * [Python 3.11+](https://www.python.org/downloads/)
-* [Lavalink Server (Requires 4.0.0+)](https://github.com/freyacodes/Lavalink)
+* [NodeLink](https://github.com/PerformanC/NodeLink) or a
+  [Lavalink Server (4.0.0+)](https://github.com/lavalink-devs/Lavalink) — both included in the
+  Docker stacks; NodeLink is required for overlay announcements
 * Optional, for announcements: a [Piper](https://github.com/OHF-Voice/piper1-gpl) HTTP server
   (included in the Docker stack)
 

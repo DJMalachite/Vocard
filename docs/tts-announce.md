@@ -190,18 +190,39 @@ support `@@variables@@`, and both fall back to `default_ai_persona` / `default_a
 - Generated clips are held in memory for a few minutes and served only to hosts that can
   reach the announce port; don't expose the port publicly.
 
-## Appendix: true overlay with NodeLink (experimental)
+## Overlay mode (NodeLink)
 
-Standard Lavalink plays **one stream per player**, so a clip cannot be mixed *over* a song —
-hence the fade-then-play design above. [NodeLink](https://github.com/PerformanC/NodeLink) is a
-Lavalink-v4-API-compatible server with an audio mixer that can overlay TTS on top of playback.
+Standard Lavalink plays **one stream per player**, so a clip can never be mixed *over* a song —
+the best it can do is the fade-then-play sequence described above.
+[NodeLink](https://github.com/PerformanC/NodeLink) is a Lavalink-v4-API-compatible server with a
+built-in **audio mixer**, which lets the announcement play *on top of* the outgoing track like a
+real radio DJ talking over the outro.
 
-To try it, point the bot's node at a NodeLink container and set
-`announce_settings.transition.mode` to `"overlay"`. The bot probes the mixer endpoint once; if
-the node doesn't support it (plain Lavalink answers 4xx), overlay is disabled for that node and
-announcements silently fall back to fade mode.
+The default stack (`docker-compose.dev.yml`) uses NodeLink, and `settings.docker.json` ships with:
 
-**Caveats:** NodeLink brings its own audio sources, so it replaces the `youtube-plugin` and
-LavaSrc/Spotify setup described in the main compose file — treat it as a separate experiment,
-not a drop-in upgrade. The mixer request format is undocumented, so verify it works before
-relying on it.
+```json
+"transition": { "mode": "overlay", "lead": 8, "fade_seconds": 5, "fade_to": 35, "overlay_volume": 100 }
+```
+
+- `overlay_volume` — announcement loudness (0–100, sent to NodeLink as a 0.0–1.0 mix volume)
+- `fade_to` — how far the music ducks under the announcement while it plays
+
+The bot ducks the music, posts the clip as a mix layer, and restores the volume when NodeLink
+emits `MixEndedEvent` (with a timer as a failsafe). Mixing must be enabled server-side —
+`NODELINK_MIX_ENABLED=true`, which the compose file sets.
+
+**Automatic fallback:** if the node has no mixer (plain Lavalink answers 4xx), the bot logs a
+warning, marks that node mixer-less for the rest of its life, and every announcement from then on
+uses fade mode with the already pre-generated clip. Nothing breaks, you just lose the overlay.
+
+### Switching back to Lavalink
+
+NodeLink brings its own audio sources, replacing the `youtube-plugin` and LavaSrc setup. If its
+sources give you trouble, `docker-compose.lavalink.yml` is the same stack with Lavalink:
+
+```bash
+docker compose -f docker-compose.lavalink.yml up -d --build
+```
+
+Then point `nodes.DEFAULT.host` at `lavalink` and set `transition.mode` to `"fade"` in
+`settings.json`.

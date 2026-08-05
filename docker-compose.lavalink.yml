@@ -1,0 +1,88 @@
+# Fallback stack: the same setup but with Lavalink instead of NodeLink.
+#
+#   docker compose -f docker-compose.lavalink.yml up -d --build
+#
+# Use this if NodeLink's built-in sources give you trouble. Lavalink has no
+# audio mixer, so announcements fall back to fade mode automatically - set
+# announce_settings.transition.mode to "fade" in settings.json to skip the
+# one-off probe.
+#
+# Remember to point nodes.DEFAULT.host at "lavalink" in settings.json.
+services:
+  vocard:
+    build: .
+    container_name: vocard-bot
+    restart: unless-stopped
+    command: sh /app/docker-entrypoint.sh
+    environment:
+      - TOKEN=${TOKEN:-}
+      - CLIENT_ID=${CLIENT_ID:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+    volumes:
+      - .:/app
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      lavalink:
+        condition: service_started
+      piper:
+        condition: service_started
+      vocard-dashboard:
+        condition: service_started
+
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: vocard-lavalink
+    restart: unless-stopped
+    environment:
+      - _JAVA_OPTIONS=-Xmx512M
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    ports:
+      - "2333:2333"
+
+  spotify-tokener:
+    image: ghcr.io/topi314/spotify-tokener:master
+    container_name: vocard-spotify-tokener
+    restart: unless-stopped
+    environment:
+      - SPOTIFY_TOKENER_ADDR=0.0.0.0:49152
+
+  mongodb:
+    image: mongo:7
+    container_name: vocard-mongo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  piper:
+    image: python:3.12-slim
+    container_name: vocard-piper
+    restart: unless-stopped
+    command: sh -c "pip install --no-cache-dir piper-tts[http] && cd /data && python -m piper.download_voices en_US-lessac-medium && python -m piper.http_server -m en_US-lessac-medium --host 0.0.0.0 --port 5000 --data-dir /data"
+    volumes:
+      - piper-voices:/data
+    ports:
+      - "5000:5000"
+
+  vocard-dashboard:
+    image: ghcr.io/chocomeow/vocard-dashboard:latest
+    container_name: vocard-dashboard
+    restart: unless-stopped
+    volumes:
+      - ./dashboard/settings.json:/app/settings.json
+    ports:
+      - "8110:8110"
+
+volumes:
+  mongo-data:
+  piper-voices:

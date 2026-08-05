@@ -99,7 +99,8 @@
             "mode": "fade",
             "lead": 8,
             "fade_seconds": 5,
-            "fade_to": 30
+            "fade_to": 30,
+            "overlay_volume": 100
         }
     },
     "sources_settings": {

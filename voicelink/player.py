@@ -50,7 +50,7 @@ from .pool import Node, NodePool
 from .objects import Track, Playlist
 from .filters import Filter, Filters
 from .enums import SearchType, LoopType, RequestMethod
-from .events import VoicelinkEvent, TrackEndEvent, TrackStartEvent, TrackExceptionEvent
+from .events import VoicelinkEvent, TrackEndEvent, TrackStartEvent, TrackExceptionEvent, MixEndedEvent
 from .exceptions import VoicelinkException, FilterInvalidArgument, TrackInvalidPosition, FilterTagAlreadyInUse, DuplicateTrack
 from .placeholders import PlayerPlaceholder
 from .queue import Queue, QUEUE_TYPES
@@ -415,6 +415,10 @@ class Player(VoiceProtocol):
         if isinstance(event, TrackExceptionEvent) and event.exception["message"] == "This content isn’t available.":
             if self._node.yt_ratelimit:
                 await self._node.yt_ratelimit.flag_active_token()
+
+        # An overlay announcement finished - bring the music back up.
+        if isinstance(event, MixEndedEvent):
+            await self._restore_volume()
 
         event.dispatch(self._bot)
 
@@ -1105,34 +1109,41 @@ class Player(VoiceProtocol):
     async def _play_overlay(self, clip: Track, duck_to: int) -> bool:
         """Plays the clip as a mixer layer over the current track.
 
-        Returns False when the node has no audio mixer (plain Lavalink), so
-        the caller can fall back to the fade-and-play-between-songs path.
+        Uses NodeLink's audio mixer (POST .../mix). Returns False when the
+        node has no mixer, so the caller can fall back to the fade-and-play-
+        between-songs path.
         """
         if self._node._mixer_supported is False:
             return False
 
+        mix_volume = self._transition_config().get("overlay_volume", 100)
         status = await self._node.mixer_request(
             RequestMethod.POST,
             query=f"sessions/{self._node._session_id}/players/{self.guild.id}/mix",
-            data={"encodedTrack": clip.track_id, "volume": 100}
+            # NodeLink expects the track nested under "track" and a 0.0-1.0 volume.
+            data={
+                "track": {"encoded": clip.track_id},
+                "volume": max(0.0, min(1.0, mix_volume / 100))
+            }
         )
 
         if status >= 300:
-            if self._node._mixer_supported is None:
-                self._node._mixer_supported = False
-                self._logger.info(
-                    f"Node [{self._node._identifier}] has no audio mixer (status {status}); "
-                    "announcements will use fade mode."
-                )
+            # 403 means mixing is switched off server-side; anything else on a
+            # first attempt means this node simply has no mixer.
+            self._node._mixer_supported = False
+            self._logger.warning(
+                f"Node [{self._node._identifier}] rejected the audio mixer request (status {status}); "
+                "announcements will fall back to fade mode."
+            )
             return False
 
         self._node._mixer_supported = True
 
-        # Duck the music under the announcement, then bring it back once the
-        # clip has had time to play out.
+        # Duck the music under the announcement. MixEndedEvent restores it;
+        # the timer is a failsafe in case that event never arrives.
         self._fade_active = True
         await self._set_raw_volume(duck_to)
-        self._bot.loop.create_task(self._restore_volume_after(((clip.length or 0) / 1000) + 1))
+        self._bot.loop.create_task(self._restore_volume_after(((clip.length or 0) / 1000) + 2))
         return True
 
     async def _restore_volume_after(self, seconds: float) -> None:

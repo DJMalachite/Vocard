@@ -126,6 +126,42 @@ class TrackExceptionEvent(VoicelinkEvent):
         return f"<Voicelink.TrackExceptionEvent player={self.player!r} exception={self.exception!r}>"
 
 
+class MixStartedEvent(VoicelinkEvent):
+    """Fired when an audio mixer layer starts playing over the current track.
+
+    Mixing is a NodeLink extension; plain Lavalink never emits this.
+    """
+    name = "mix_started"
+
+    def __init__(self, data: dict, player: Player):
+        self.player: Player = player
+        self.mix_id: str = data.get("mixId")
+        self.volume: float = data.get("volume")
+
+        # on_voicelink_mix_started(player, mix_id, volume)
+        self.handler_args = self.player, self.mix_id, self.volume
+
+    def __repr__(self) -> str:
+        return f"<Voicelink.MixStartedEvent player={self.player!r} mix_id={self.mix_id!r}>"
+
+
+class MixEndedEvent(VoicelinkEvent):
+    """Fired when an audio mixer layer finishes playing."""
+    name = "mix_ended"
+
+    def __init__(self, data: dict, player: Player):
+        self.player: Player = player
+        self.mix_id: str = data.get("mixId")
+        self.reason: str = data.get("reason")
+
+        # on_voicelink_mix_ended(player, mix_id, reason)
+        self.handler_args = self.player, self.mix_id, self.reason
+
+    def __repr__(self) -> str:
+        return f"<Voicelink.MixEndedEvent player={self.player!r} mix_id={self.mix_id!r} " \
+               f"reason={self.reason!r}>"
+
+
 class WebSocketClosedPayload:
     def __init__(self, data: dict):
         self.guild = NodePool.get_node().bot.get_guild(int(data["guildId"]))

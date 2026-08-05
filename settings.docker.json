@@ -4,7 +4,7 @@
     "mongodb_name": "vocard",
     "nodes": {
         "DEFAULT": {
-            "host": "lavalink",
+            "host": "nodelink",
             "port": 2333,
             "password": "youshallnotpass",
             "secure": false,
@@ -94,10 +94,11 @@
             "client_secret": ""
         },
         "transition": {
-            "mode": "fade",
+            "mode": "overlay",
             "lead": 8,
             "fade_seconds": 5,
-            "fade_to": 30
+            "fade_to": 35,
+            "overlay_volume": 100
         }
     },
     "sources_settings": {
