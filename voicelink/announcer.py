@@ -85,11 +85,76 @@ class AnnounceServer:
         return f"{self._public_url}/announce/{token}.wav"
 
     async def _handle(self, request: web.Request) -> web.Response:
+        """Serves a clip, honouring Range requests.
+
+        Range support is not optional: audio servers probe durations and
+        resume playback with `Range: bytes=N-`. Answering those with the whole
+        file from byte 0 makes a clip restart from the beginning instead of
+        finishing.
+        """
         token = request.match_info["token"].removesuffix(".wav")
         entry = self._store.get(token)
         if not entry:
             return web.Response(status=404)
-        return web.Response(body=entry[0], content_type="audio/wav")
+
+        wav = entry[0]
+        total = len(wav)
+        headers = {"Accept-Ranges": "bytes"}
+
+        requested = self._parse_range(request.headers.get("Range"), total)
+        if requested is None:
+            return web.Response(body=wav, content_type="audio/wav", headers=headers)
+
+        start, end = requested
+        if start >= total:
+            headers["Content-Range"] = f"bytes */{total}"
+            return web.Response(status=416, headers=headers)
+
+        headers["Content-Range"] = f"bytes {start}-{end}/{total}"
+        return web.Response(
+            status=206,
+            body=wav[start:end + 1],
+            content_type="audio/wav",
+            headers=headers
+        )
+
+    @staticmethod
+    def _parse_range(header: Optional[str], total: int) -> Optional[tuple[int, int]]:
+        """Parses a single byte range. Returns None to serve the whole file."""
+        if not header:
+            return None
+
+        units, _, spec = header.partition("=")
+        if units.strip().lower() != "bytes" or "," in spec:
+            return None
+
+        start_text, sep, end_text = spec.strip().partition("-")
+        if not sep:
+            return None
+
+        try:
+            if start_text:
+                start = int(start_text)
+                end = int(end_text) if end_text else total - 1
+            else:
+                # Suffix form: bytes=-N asks for the final N bytes.
+                start = max(0, total - int(end_text))
+                end = total - 1
+        except ValueError:
+            return None
+
+        if start < 0:
+            return None
+
+        # Past the end is a valid request the caller answers with 416, so it
+        # must not fall through to the "serve everything" path.
+        if start >= total:
+            return start, total - 1
+
+        if end < start:
+            return None
+
+        return start, min(end, total - 1)
 
     async def _sweep(self) -> None:
         while True:
