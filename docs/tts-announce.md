@@ -205,17 +205,31 @@ The default stack (`docker-compose.dev.yml`) uses NodeLink, and `settings.docker
 ```
 
 - `overlay_volume` — announcement loudness (0–100, sent to NodeLink as a 0.0–1.0 mix volume)
-- `fade_to` — how far the music ducks under the announcement while it plays
+- `fade_to` — the volume the music ducks to underneath the announcement
+- `fade_seconds` — how long the ramps down and up take
 - `lead` — how many seconds before the end to start preparing the clip. This is a *budget*,
   not the announcement's start time: generation has to finish comfortably before the clip is
   due to play, so give it room
 - `overlay_tail` — seconds of music that should still play after the announcement finishes
 
-The announcement is scheduled from its own measured duration, so it finishes `overlay_tail`
-seconds before the song ends. This matters because the server clears every mix layer the moment
-the main track ends — an announcement still talking at that point gets cut off mid-sentence.
-If a song is too short to fit the announcement in its outro, it is played over the **next**
-song's intro instead rather than being truncated.
+The sequence, for a 6-second announcement with `fade_seconds: 5` and `overlay_tail: 2`:
+
+| When | What happens |
+|---|---|
+| end − 20s (`lead`) | the announcement is written and synthesized in the background |
+| end − 13s | music ramps down from 100% to `fade_to` over `fade_seconds` |
+| end − 8s | announcement starts over the ducked music |
+| end − 2s (`overlay_tail`) | announcement ends — the music **stays** ducked |
+| end | song finishes, the next one starts quietly and ramps back to 100% |
+
+Holding the duck through the track change is deliberate: it stops the outgoing song from
+jumping back to full for its last couple of seconds, and lets the next one fade in underneath.
+
+The announcement is scheduled from its own measured duration so it always finishes before the
+song does — the server clears every mix layer the moment the main track ends, and an
+announcement still talking at that point would be cut off mid-sentence. If a song is too short
+to fit the announcement in its outro, it is played over the **next** song's intro instead
+rather than being truncated.
 
 The bot ducks the music, posts the clip as a mix layer, and restores the volume when NodeLink
 emits `MixEndedEvent` (with a timer as a failsafe). Mixing must be enabled server-side —

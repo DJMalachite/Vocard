@@ -142,6 +142,8 @@ class Player(VoiceProtocol):
         self._pregen_started_at: float = 0.0
         self._transition_task: Optional[asyncio.Task] = None
         self._fade_active: bool = False
+        self._duck_until_next_track: bool = False
+        self._raw_volume: int = self.settings.get('volume', 100)
         self._songs_since_announce: int = 0
         self._last_announce_ts: float = 0.0
         self._filters: Filters = Filters()
@@ -416,9 +418,11 @@ class Player(VoiceProtocol):
             if self._node.yt_ratelimit:
                 await self._node.yt_ratelimit.flag_active_token()
 
-        # An overlay announcement finished - bring the music back up.
-        if isinstance(event, MixEndedEvent):
-            await self._restore_volume()
+        # An overlay announcement finished. When it was talking over an outro
+        # the music stays down until the next song starts, so it fades in
+        # underneath instead of the old track popping back up to full.
+        if isinstance(event, MixEndedEvent) and not self._duck_until_next_track:
+            await self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
 
         event.dispatch(self._bot)
 
@@ -430,6 +434,15 @@ class Player(VoiceProtocol):
             # for the transition into the next one.
             if not self._pending_track and self._current:
                 self._songs_since_announce += 1
+
+                # The previous track was ducked for an announcement: fade this
+                # one in rather than snapping back to full volume.
+                if self._duck_until_next_track:
+                    self._duck_until_next_track = False
+                    self._bot.loop.create_task(
+                        self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
+                    )
+
                 if self._announcer:
                     self._start_transition_worker(self._current)
 
@@ -441,8 +454,10 @@ class Player(VoiceProtocol):
             return
 
         # Whatever ended the last track (natural end, skip, stop), the fade
-        # must not outlive it.
-        await self._restore_volume()
+        # must not outlive it - unless we are deliberately holding the duck so
+        # the next song fades in under an announcement.
+        if not self._duck_until_next_track:
+            await self._restore_volume()
 
         if self._paused:
             self._paused = False
@@ -495,7 +510,12 @@ class Player(VoiceProtocol):
                     # Overlay mode never plays the clip on its own: start the
                     # song and talk over its intro, the way a radio DJ would.
                     await self.play(track, start=track.position)
-                    if await self._play_overlay(clip, self._transition_config().get("fade_to", 30)):
+                    config = self._transition_config()
+                    if await self._play_overlay(
+                        clip,
+                        config.get("fade_to", 30),
+                        ramp_seconds=min(1.5, config.get("fade_seconds", 5))
+                    ):
                         self._commit_announcement()
 
                 elif clip:
@@ -641,6 +661,8 @@ class Player(VoiceProtocol):
             
     async def stop(self):
         """Stops the currently playing track."""
+        # A skip abandons the announcement, so drop the held duck too.
+        self._duck_until_next_track = False
         self._cancel_transition()
         self._pending_track = None
         self._current = None
@@ -819,6 +841,7 @@ class Player(VoiceProtocol):
         """Sets the volume of the player as an integer. Lavalink accepts values from 0 to 500."""
         await self.send(method=RequestMethod.PATCH, data={"volume": volume})
         self._volume = volume
+        self._raw_volume = volume
 
         if self.is_ipc_connected:
             await self.send_ws({"op": "updateVolume", "volume": volume}, requester)
@@ -1070,14 +1093,29 @@ class Player(VoiceProtocol):
         """Changes the Lavalink volume without touching the player's stored volume."""
         await self.send(method=RequestMethod.PATCH, data={"volume": int(volume)})
 
-    async def _restore_volume(self) -> None:
-        """Restores the player volume after a fade. Idempotent."""
+    async def _ramp_volume(self, target: int, seconds: float, steps: int = 12) -> None:
+        """Slides the playback volume to `target` over `seconds`."""
+        start = self._raw_volume
+        if seconds <= 0 or start == target:
+            self._raw_volume = target
+            await self._set_raw_volume(target)
+            return
+
+        for step in range(1, steps + 1):
+            volume = round(start + ((target - start) * step / steps))
+            self._raw_volume = volume
+            await self._set_raw_volume(volume)
+            await asyncio.sleep(seconds / steps)
+
+    async def _restore_volume(self, ramp_seconds: float = 0) -> None:
+        """Brings the volume back up after a duck or fade. Idempotent."""
         if not self._fade_active:
             return
 
         self._fade_active = False
+        self._duck_until_next_track = False
         try:
-            await self._set_raw_volume(self._volume)
+            await self._ramp_volume(self._volume, ramp_seconds)
         except Exception as e:
             self._logger.warning(f"Failed to restore volume in {self.guild.name}({self.guild.id}): {e}")
 
@@ -1131,6 +1169,7 @@ class Player(VoiceProtocol):
         """
         clip_ms = clip.end_time or clip.length or 0
         tail_ms = max(0, config.get("overlay_tail", 2)) * 1000
+        fade_seconds = max(0, config.get("fade_seconds", 5))
 
         if clip_ms:
             remaining = track.length - self._interp_position(track)
@@ -1144,13 +1183,20 @@ class Player(VoiceProtocol):
                 )
                 return False
 
-            # Hold until the announcement would finish just before the song.
-            while (track.length - self._interp_position(track)) > (clip_ms + tail_ms):
+            # Start early enough that the fade-down finishes before the voice
+            # comes in and the announcement finishes before the song does.
+            start_at = clip_ms + tail_ms + (fade_seconds * 1000)
+            while (track.length - self._interp_position(track)) > start_at:
                 await asyncio.sleep(0.25)
                 if self._current is not track:
                     return False
 
-        return await self._play_overlay(clip, duck_to)
+        return await self._play_overlay(
+            clip,
+            duck_to,
+            ramp_seconds=fade_seconds,
+            hold_until_next_track=True
+        )
 
     def _overlay_available(self) -> bool:
         """Whether announcements should be mixed over the music."""
@@ -1159,15 +1205,30 @@ class Player(VoiceProtocol):
             and self._node._mixer_supported is not False
         )
 
-    async def _play_overlay(self, clip: Track, duck_to: int) -> bool:
+    async def _play_overlay(
+        self,
+        clip: Track,
+        duck_to: int,
+        *,
+        ramp_seconds: float = 0,
+        hold_until_next_track: bool = False
+    ) -> bool:
         """Plays the clip as a mixer layer over the current track.
 
         Uses NodeLink's audio mixer (POST .../mix). Returns False when the
         node has no mixer, so the caller can fall back to the fade-and-play-
         between-songs path.
+
+        `hold_until_next_track` keeps the music ducked once the announcement
+        ends, so the next song fades in underneath instead of the outgoing one
+        jumping back to full for its last couple of seconds.
         """
         if self._node._mixer_supported is False:
             return False
+
+        # Duck first so the music is already down when the voice comes in.
+        self._fade_active = True
+        await self._ramp_volume(duck_to, ramp_seconds)
 
         mix_volume = self._transition_config().get("overlay_volume", 100)
         status = await self._node.mixer_request(
@@ -1191,17 +1252,21 @@ class Player(VoiceProtocol):
             return False
 
         self._node._mixer_supported = True
+        self._duck_until_next_track = hold_until_next_track
 
-        # Duck the music under the announcement. MixEndedEvent restores it;
-        # the timer is a failsafe in case that event never arrives.
-        self._fade_active = True
-        await self._set_raw_volume(duck_to)
-        self._bot.loop.create_task(self._restore_volume_after(((clip.length or 0) / 1000) + 2))
+        # Normally MixEndedEvent (or the next track starting) brings the music
+        # back; this is the failsafe for when neither arrives.
+        clip_seconds = (clip.end_time or clip.length or 0) / 1000
+        self._bot.loop.create_task(self._restore_volume_after(clip_seconds + ramp_seconds + 30))
         return True
 
     async def _restore_volume_after(self, seconds: float) -> None:
         try:
             await asyncio.sleep(seconds)
+            if self._fade_active:
+                self._logger.debug(
+                    f"Player in {self.guild.name}({self.guild.id}) restoring volume from the announcement failsafe."
+                )
             await self._restore_volume()
         except asyncio.CancelledError:
             pass
@@ -1272,16 +1337,10 @@ class Player(VoiceProtocol):
             if fade_ms <= 0 or fade_to >= self._volume:
                 return
 
-            # Step the volume down over the remaining fade window.
-            steps = 10
-            start_volume = self._volume
+            # Fade the outgoing track down; do_next brings it back for the
+            # announcement and the song that follows.
             self._fade_active = True
-            for step in range(1, steps + 1):
-                if self._current is not track or self._paused:
-                    break
-                volume = start_volume - ((start_volume - fade_to) * step / steps)
-                await self._set_raw_volume(volume)
-                await asyncio.sleep((fade_ms / 1000) / steps)
+            await self._ramp_volume(fade_to, fade_ms / 1000)
 
         except asyncio.CancelledError:
             raise
