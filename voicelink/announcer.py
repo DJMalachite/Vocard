@@ -363,10 +363,14 @@ class Announcer:
             info = decode(clip.track_id, source_decoders=_HTTP_SOURCE_DECODER)
             info.setdefault("artworkUrl", None)
             info.setdefault("isrc", None)
+            # Keep these plain ASCII. The track format uses Java's modified
+            # UTF-8, where astral characters (emoji, styled letters - bot
+            # names love those) encode differently than Python's utf8 and
+            # break the server-side decoder.
             info.update({
                 "length": duration,
                 "title": "Announcement",
-                "author": self._bot.user.name if self._bot.user else "Vocard"
+                "author": "Vocard"
             })
             encoded = encode(info, source_encoders=_HTTP_SOURCE_ENCODER)
             return Track(track_id=encoded, info=info, requester=player.guild.me)
