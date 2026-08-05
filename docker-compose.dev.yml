@@ -18,6 +18,8 @@ services:
       - TOKEN=${TOKEN:-}
       - CLIENT_ID=${CLIENT_ID:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
     volumes:
       - .:/app
     depends_on:

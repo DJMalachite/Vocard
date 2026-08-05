@@ -127,20 +127,81 @@ Requires the **Manage Server** permission:
 /settings announce mode:AI
 /settings announce mode:Disabled
 /settings announce template:Coming up — @@track_name@@!
-/settings announce ai_prompt:Announce @@track_name@@ by @@track_author@@ like a pirate, one sentence only.
+/settings announce persona:You are BT-7274, a Vanguard-class Titan addressing your pilot.
+/settings announce ai_prompt:Announce @@track_name@@ by @@track_author@@, a @@track_genre@@ track. One sentence.
+/settings announce temperature:1.4
+/settings announce frequency:3 cooldown:10
 /settings announce            (no options — shows the current configuration)
 /settings reset setting:Tts announcements
 ```
 
-Useful placeholders: `@@track_name@@`, `@@track_author@@`, `@@track_duration@@`,
-`@@track_requester_name@@`, `@@track_source_name@@`, `@@queue_length@@`, `@@dj@@`.
+Useful placeholders: `@@track_name@@`, `@@track_author@@`, `@@track_genre@@`,
+`@@track_duration@@`, `@@track_requester_name@@`, `@@track_source_name@@`,
+`@@queue_length@@`, `@@dj@@`.
+
+### Frequency and cooldown
+
+`frequency:N` announces every Nth song (1 = every song). `cooldown:M` enforces at least M
+minutes between announcements. **Both** conditions must pass, so `frequency:3 cooldown:10`
+means "every third song, but never more often than once every 10 minutes". The first song
+after the bot joins is always announced.
+
+### Smooth transitions
+
+Announcements no longer cut in abruptly. During the last seconds of a song the bot
+pre-generates the upcoming clip and fades the music down, so the announcement starts with no
+gap. Configured globally under `announce_settings.transition`:
+
+```json
+"transition": { "mode": "fade", "lead": 8, "fade_seconds": 5, "fade_to": 30 }
+```
+
+- `lead` — seconds before the end at which pre-generation starts
+- `fade_seconds` / `fade_to` — how long the fade takes and the volume percentage it fades to
+- `mode` — `"fade"` (default) or `"overlay"` (see the NodeLink appendix)
+
+Fading only happens when an announcement is actually coming: live streams, short tracks,
+autoplay picks, and non-announced songs all play through untouched.
+
+### Genre lookup (`@@track_genre@@`)
+
+Spotify is the only source that exposes genre data, and it attaches genres to *artists*.
+Create a free app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+and set the credentials in `announce_settings.spotify` (or `SPOTIFY_CLIENT_ID` /
+`SPOTIFY_CLIENT_SECRET` env vars). Results are cached per artist for 24 hours. When
+unconfigured or unavailable the variable is an empty string — use a conditional to keep
+templates tidy:
+
+```
+Up next: @@track_name@@{{track_genre != '' ?? , a @@track_genre@@ track}}.
+```
+
+### AI persona and temperature
+
+`persona` is sent as the system message (the character), `ai_prompt` as the task. Splitting
+them keeps the character stable while you iterate on the instruction. `temperature` runs from
+0.0 (predictable) to 2.0 (chaotic); around 0.8–1.2 is a good range for radio patter. Both
+support `@@variables@@`, and both fall back to `default_ai_persona` / `default_ai_prompt`.
 
 ## Notes & limitations
 
-- Announcement generation happens right before each song, so a slow AI/Piper response adds
-  a short gap between songs (bounded by the configured timeouts).
 - With repeat-track mode on, the song is re-announced on every loop.
-- The player's volume and active audio filters (nightcore, etc.) also apply to the
-  announcement clip.
+- The player's active audio filters (nightcore, etc.) also apply to the announcement clip.
 - Generated clips are held in memory for a few minutes and served only to hosts that can
   reach the announce port; don't expose the port publicly.
+
+## Appendix: true overlay with NodeLink (experimental)
+
+Standard Lavalink plays **one stream per player**, so a clip cannot be mixed *over* a song —
+hence the fade-then-play design above. [NodeLink](https://github.com/PerformanC/NodeLink) is a
+Lavalink-v4-API-compatible server with an audio mixer that can overlay TTS on top of playback.
+
+To try it, point the bot's node at a NodeLink container and set
+`announce_settings.transition.mode` to `"overlay"`. The bot probes the mixer endpoint once; if
+the node doesn't support it (plain Lavalink answers 4xx), overlay is disabled for that node and
+announcements silently fall back to fade mode.
+
+**Caveats:** NodeLink brings its own audio sources, so it replaces the `youtube-plugin` and
+LavaSrc/Spotify setup described in the main compose file — treat it as a separate experiment,
+not a drop-in upgrade. The mixer request format is undocumented, so verify it works before
+relying on it.

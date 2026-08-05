@@ -284,7 +284,11 @@ class Settings(commands.Cog, name="settings"):
     @app_commands.describe(
         mode="Disable announcements or choose how announcement text is produced.",
         template="Simple-mode template (supports @@variables@@).",
-        ai_prompt="AI-mode prompt (supports @@variables@@)."
+        ai_prompt="AI-mode prompt (supports @@variables@@).",
+        persona="AI-mode character/system prompt, e.g. 'You are a calm late-night DJ.'",
+        temperature="AI creativity from 0.0 (predictable) to 2.0 (wild).",
+        frequency="Announce every Nth song. 1 announces every song.",
+        cooldown="Minimum minutes between announcements. 0 disables the cooldown."
     )
     @app_commands.choices(mode=[
         app_commands.Choice(name="Disabled", value="off"),
@@ -293,7 +297,17 @@ class Settings(commands.Cog, name="settings"):
     ])
     @commands.has_permissions(manage_guild=True)
     @commands.dynamic_cooldown(cooldown_check, commands.BucketType.guild)
-    async def announce(self, ctx: commands.Context, mode: str = None, template: str = None, ai_prompt: str = None):
+    async def announce(
+        self,
+        ctx: commands.Context,
+        mode: str = None,
+        template: str = None,
+        ai_prompt: str = None,
+        persona: str = None,
+        temperature: commands.Range[float, 0.0, 2.0] = None,
+        frequency: commands.Range[int, 1, 50] = None,
+        cooldown: commands.Range[int, 0, 120] = None
+    ):
         "Configure TTS voice announcements played before each song."
         announce_config = voicelink.Config().announce_settings
         if not announce_config.get("enable"):
@@ -308,6 +322,14 @@ class Settings(commands.Cog, name="settings"):
             updates["tts_announce.template"] = template
         if ai_prompt:
             updates["tts_announce.ai_prompt"] = ai_prompt
+        if persona:
+            updates["tts_announce.ai_persona"] = persona
+        if temperature is not None:
+            updates["tts_announce.ai_temperature"] = float(temperature)
+        if frequency is not None:
+            updates["tts_announce.frequency"] = int(frequency)
+        if cooldown is not None:
+            updates["tts_announce.cooldown"] = int(cooldown)
 
         if not updates:
             settings = await MongoDBHandler.get_settings(ctx.guild.id)
@@ -317,7 +339,11 @@ class Settings(commands.Cog, name="settings"):
             embed.description = texts[1].format(
                 await LangHandler.get_lang(ctx.guild.id, "common.status.enabled" if guild_cfg.get("enable") else "common.status.disabled"),
                 guild_cfg.get("mode", "simple"),
+                guild_cfg.get("frequency", 1),
+                guild_cfg.get("cooldown", 0),
+                guild_cfg.get("ai_temperature", announce_config.get("ai", {}).get("temperature", "default")),
                 guild_cfg.get("template") or announce_config.get("default_template", ""),
+                guild_cfg.get("ai_persona") or announce_config.get("default_ai_persona", ""),
                 guild_cfg.get("ai_prompt") or announce_config.get("default_ai_prompt", "")
             )
             return await dispatch_message(ctx, embed)

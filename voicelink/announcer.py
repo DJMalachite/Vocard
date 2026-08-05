@@ -35,6 +35,7 @@ from discord.ext import commands
 from typing import TYPE_CHECKING, Optional
 
 from .placeholders import PlayerPlaceholder
+from .spotify import SpotifyGenreClient
 
 if TYPE_CHECKING:
     from .player import Player
@@ -128,18 +129,40 @@ class PiperClient:
 class AIClient:
     """Client for an OpenAI-compatible chat completions endpoint (OpenAI, Ollama, etc.)."""
 
-    def __init__(self, base_url: str, model: str, api_key: Optional[str] = None, timeout: int = 10):
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        api_key: Optional[str] = None,
+        timeout: int = 10,
+        temperature: Optional[float] = None
+    ):
         self._url: str = base_url.rstrip("/") + "/chat/completions"
         self._model: str = model
         self._api_key: Optional[str] = api_key or os.getenv("OPENAI_API_KEY")
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
+        self._temperature: Optional[float] = temperature
 
-    async def generate(self, prompt: str) -> Optional[str]:
+    async def generate(
+        self,
+        prompt: str,
+        *,
+        persona: Optional[str] = None,
+        temperature: Optional[float] = None
+    ) -> Optional[str]:
         headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
-        body = {"model": self._model, "messages": [{"role": "user", "content": prompt}]}
+        messages = []
+        if persona:
+            messages.append({"role": "system", "content": persona})
+        messages.append({"role": "user", "content": prompt})
+
+        body = {"model": self._model, "messages": messages}
+
+        if (temp := temperature if temperature is not None else self._temperature) is not None:
+            body["temperature"] = temp
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(self._url, json=body, headers=headers) as resp:
@@ -184,15 +207,27 @@ class Announcer:
             base_url=ai_cfg.get("base_url", "https://api.openai.com/v1"),
             model=ai_cfg.get("model", "gpt-4o-mini"),
             api_key=ai_cfg.get("api_key"),
-            timeout=timeouts.get("ai", 10)
+            timeout=timeouts.get("ai", 10),
+            temperature=ai_cfg.get("temperature")
+        )
+
+        spotify_cfg = settings.get("spotify", {})
+        self._spotify = SpotifyGenreClient(
+            client_id=spotify_cfg.get("client_id"),
+            client_secret=spotify_cfg.get("client_secret"),
+            timeout=timeouts.get("spotify", 8)
         )
 
         self._default_template: str = settings.get("default_template", "Up next: @@track_name@@ by @@track_author@@")
+        self._default_ai_persona: str = settings.get(
+            "default_ai_persona",
+            "You are an energetic radio DJ with a warm, concise delivery."
+        )
         self._default_ai_prompt: str = settings.get(
             "default_ai_prompt",
-            "You are an energetic radio DJ. In one short sentence of at most 25 words, "
-            "announce the next song: @@track_name@@ by @@track_author@@, requested by "
-            "@@track_requester_name@@. Reply with only the announcement text."
+            "In one short sentence of at most 25 words, announce the next song: "
+            "@@track_name@@ by @@track_author@@, requested by @@track_requester_name@@. "
+            "Reply with only the announcement text."
         )
         self._max_text_length: int = settings.get("max_text_length", 300)
 
@@ -226,12 +261,21 @@ class Announcer:
 
     async def _render_text(self, player: Player, track: Track, guild_cfg: dict) -> Optional[str]:
         ph = PlayerPlaceholder(self._bot, player, track=track)
+        # Static variable - the rv builder below passes non-callables through,
+        # so @@track_genre@@ works in both simple and AI mode.
+        ph.variables["track_genre"] = await self._spotify.get_genre(track)
         rv = {key: func() if callable(func) else func for key, func in ph.variables.items()}
 
         if guild_cfg.get("mode", "simple") == "ai":
             prompt = ph.replace(guild_cfg.get("ai_prompt") or self._default_ai_prompt, rv)
             if not prompt:
                 return None
-            return await self._ai.generate(prompt)
+
+            persona = ph.replace(guild_cfg.get("ai_persona") or self._default_ai_persona, rv)
+            return await self._ai.generate(
+                prompt,
+                persona=persona,
+                temperature=guild_cfg.get("ai_temperature")
+            )
 
         return ph.replace(guild_cfg.get("template") or self._default_template, rv)

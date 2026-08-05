@@ -86,6 +86,19 @@ class Queue:
 
         return track
 
+    def peek(self) -> Optional[Track]:
+        """Returns the track get() would return next, without consuming it."""
+        try:
+            return self._queue[self._position - 1 if self._repeat.mode == LoopType.TRACK else self._position]
+        except IndexError:
+            if self._repeat.mode == LoopType.QUEUE:
+                try:
+                    return self._queue[self._repeat_position]
+                except IndexError:
+                    return None
+
+        return None
+
     def put(self, item: Track) -> int:
         if self.count >= self._size:
             raise QueueFull(self.get_msg("queue.errors.queueFull").format(self._size))

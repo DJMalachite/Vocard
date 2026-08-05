@@ -147,7 +147,7 @@
         },
         "tts": {
             "title": "🔊 TTS Announcements",
-            "value": "```Status: {0}\nMode: {1}```\n**Template:**\n```{2}```\n**AI Prompt:**\n```{3}```"
+            "value": "```Status: {0}\nMode: {1}\nEvery: {2} song(s)\nCooldown: {3} min\nTemperature: {4}```\n**Template:**\n```{5}```\n**AI Persona:**\n```{6}```\n**AI Prompt:**\n```{7}```"
         }
     },
     "ping": {

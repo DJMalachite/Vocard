@@ -147,7 +147,7 @@
         },
         "tts": {
             "title": "🔊 Ogłoszenia TTS",
-            "value": "```Status: {0}\nTryb: {1}```\n**Szablon:**\n```{2}```\n**Prompt AI:**\n```{3}```"
+            "value": "```Status: {0}\nTryb: {1}\nCo: {2} utwór(y)\nOdstęp: {3} min\nTemperatura: {4}```\n**Szablon:**\n```{5}```\n**Persona AI:**\n```{6}```\n**Prompt AI:**\n```{7}```"
         }
     },
     "ping": {

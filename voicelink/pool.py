@@ -94,6 +94,9 @@ class Node:
         self._logger: Optional[logging.Logger] = logger
         self._stats: Optional[NodeStats] = None
         self._reconnect_strategy: ReconnectStrategy = reconnect_strategy
+        # None until the first audio-mixer request tells us whether this node
+        # supports overlay announcements (a NodeLink extension).
+        self._mixer_supported: Optional[bool] = None
 
         self._websocket_uri: str = f"{'wss' if self._secure else 'ws'}://{self._host}:{self._port}/" + NODE_VERSION + "/websocket"
         self._rest_uri: str = f"{'https' if self._secure else 'http'}://{self._host}:{self._port}"
@@ -274,6 +277,29 @@ class Node:
                 return await resp.json(content_type=None)
 
             return await resp.json()
+
+    async def mixer_request(self, method: RequestMethod, query: str, data: Union[dict, str] = {}) -> int:
+        """Sends an audio-mixer request, returning the HTTP status instead of raising.
+
+        The mixer endpoints are a NodeLink extension; plain Lavalink answers
+        4xx, which the caller uses to disable overlay support for this node.
+        """
+        if not self._available:
+            return 503
+
+        uri: str = f"{self._rest_uri}/{NODE_VERSION}/{query}"
+        try:
+            async with self._session.request(
+                method=method.value,
+                url=uri,
+                headers={"Authorization": self._password},
+                json=data
+            ) as resp:
+                return resp.status
+
+        except Exception as e:
+            self._logger.debug(f"Mixer request to node [{self._identifier}] failed: {e}")
+            return 503
 
     async def connect(self) -> Node:
         """Initiates a connection with a Lavalink node and adds it to the node pool."""

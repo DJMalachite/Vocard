@@ -147,7 +147,7 @@
         },
         "tts": {
             "title": "🔊 Thông báo TTS",
-            "value": "```Trạng thái: {0}\nChế độ: {1}```\n**Mẫu:**\n```{2}```\n**Prompt AI:**\n```{3}```"
+            "value": "```Trạng thái: {0}\nChế độ: {1}\nMỗi: {2} bài\nThời gian chờ: {3} phút\nNhiệt độ: {4}```\n**Mẫu:**\n```{5}```\n**Nhân vật AI:**\n```{6}```\n**Prompt AI:**\n```{7}```"
         }
     },
     "ping": {

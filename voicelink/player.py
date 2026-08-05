@@ -135,6 +135,15 @@ class Player(VoiceProtocol):
         self._node = NodePool.get_node()
         self._current: Optional[Track] = None
         self._pending_track: Optional[Track] = None
+
+        # TTS announcement transition state
+        self._pregen_task: Optional[asyncio.Task] = None
+        self._pregen_for_uri: Optional[str] = None
+        self._pregen_started_at: float = 0.0
+        self._transition_task: Optional[asyncio.Task] = None
+        self._fade_active: bool = False
+        self._songs_since_announce: int = 0
+        self._last_announce_ts: float = 0.0
         self._filters: Filters = Filters()
         self._paused: bool = False
         self._is_connected: bool = False
@@ -392,7 +401,13 @@ class Player(VoiceProtocol):
     async def _dispatch_event(self, data: dict):
         """Dispatches an event based on the type of event data received."""
         event_type = data.get("type")
-        event: VoicelinkEvent = getattr(events, event_type)(data, self)
+        event_cls = getattr(events, event_type, None)
+        if event_cls is None:
+            # Servers such as NodeLink emit events Lavalink does not define.
+            self._logger.debug(f"Player in {self.guild.name}({self.guild.id}) ignored unknown event {event_type}.")
+            return
+
+        event: VoicelinkEvent = event_cls(data, self)
 
         if isinstance(event, TrackEndEvent) and event.reason != "replaced":
             self._current = None
@@ -406,13 +421,25 @@ class Player(VoiceProtocol):
         if isinstance(event, TrackStartEvent):
             self._ending_track = self._current
 
+            # A real song started (during a clip, _pending_track is set):
+            # count it towards the announcement frequency and begin watching
+            # for the transition into the next one.
+            if not self._pending_track and self._current:
+                self._songs_since_announce += 1
+                if self._announcer:
+                    self._start_transition_worker(self._current)
+
         self._logger.debug(f"Player in {self.guild.name}({self.guild.id}) dispatched event {event_type}.")
 
     async def do_next(self):
         """Processes the next track in the queue."""
         if self._current or self.is_playing or not self.channel:
             return
-        
+
+        # Whatever ended the last track (natural end, skip, stop), the fade
+        # must not outlive it.
+        await self._restore_volume()
+
         if self._paused:
             self._paused = False
 
@@ -452,16 +479,19 @@ class Player(VoiceProtocol):
                 self._schedule_inactive_cleanup_timer()
         else:
             clip = None
-            announcer = getattr(self._bot, "announcer", None)
-            guild_cfg = self.settings.get("tts_announce") or {}
-            if announcer and guild_cfg.get("enable"):
-                clip = await announcer.build_announcement(self, track, guild_cfg)
+            if self._announce_config.get("enable"):
+                clip = await self._take_pregen(track)
+                if not clip and self._announcement_due():
+                    clip = await self._announcer.build_announcement(self, track, self._announce_config)
+            else:
+                self._discard_pregen()
 
             try:
                 if clip:
                     # Stash the real track before playing the clip so the
                     # controller/status/IPC updates below resolve to it.
                     self._pending_track = track
+                    self._commit_announcement()
                     await self.play(clip)
                 else:
                     await self.play(track, start=track.position)
@@ -556,6 +586,8 @@ class Player(VoiceProtocol):
         try:
             await self.update_voice_status(remove_status=True)
             self._cancel_inactive_cleanup_timer()
+            self._cancel_transition()
+            self._discard_pregen()
             if self.controller:
                 if self.controller.id == self.settings.get("music_request_channel", {}).get("controller_msg_id"):
                     await self.controller.edit(embed=self.build_embed(), view=None)
@@ -597,6 +629,7 @@ class Player(VoiceProtocol):
             
     async def stop(self):
         """Stops the currently playing track."""
+        self._cancel_transition()
         self._pending_track = None
         self._current = None
         await self.send(method=RequestMethod.PATCH, data={'encodedTrack': None})
@@ -955,6 +988,239 @@ class Player(VoiceProtocol):
                 f"({self.channel.guild.id})", 
                 exc_info=e
             )
+
+    # --- TTS announcements -------------------------------------------------
+
+    @property
+    def _announcer(self):
+        """The bot's Announcer, or None when the feature is disabled globally."""
+        return getattr(self._bot, "announcer", None)
+
+    @property
+    def _announce_config(self) -> dict:
+        """Per-guild announcement settings."""
+        return self.settings.get("tts_announce") or {}
+
+    def _announcement_due(self) -> bool:
+        """Whether the next track should be announced.
+
+        Pure check - shared by the transition watcher and do_next so the two
+        can never disagree. Counters only move in _commit_announcement().
+        """
+        config = self._announce_config
+        if not self._announcer or not config.get("enable"):
+            return False
+
+        # The first track of a session is always announced.
+        if not self._last_announce_ts:
+            return True
+
+        # _songs_since_announce counts real tracks started since the last
+        # announcement, including the announced one, so frequency 3 means
+        # "announce, two quiet tracks, announce".
+        if self._songs_since_announce < max(1, config.get("frequency", 1)):
+            return False
+
+        cooldown = max(0, config.get("cooldown", 0)) * 60
+        if cooldown and (time.time() - self._last_announce_ts) < cooldown:
+            return False
+
+        return True
+
+    def _commit_announcement(self) -> None:
+        """Records that an announcement is playing, resetting frequency state."""
+        self._songs_since_announce = 0
+        self._last_announce_ts = time.time()
+
+    def _transition_config(self) -> dict:
+        return Config().announce_settings.get("transition", {})
+
+    def _interp_position(self, track: Track) -> float:
+        """Interpolated playback position in ms, clamped to the track length.
+
+        Player.position returns 0 once interpolation overshoots the track
+        length, which would read as "the song restarted" during a fade.
+        """
+        if self._paused:
+            return min(self._last_position, track.length)
+
+        position = self._last_position + ((time.time() * 1000) - self._last_update)
+        return max(0.0, min(position, float(track.length)))
+
+    async def _set_raw_volume(self, volume: int) -> None:
+        """Changes the Lavalink volume without touching the player's stored volume."""
+        await self.send(method=RequestMethod.PATCH, data={"volume": int(volume)})
+
+    async def _restore_volume(self) -> None:
+        """Restores the player volume after a fade. Idempotent."""
+        if not self._fade_active:
+            return
+
+        self._fade_active = False
+        try:
+            await self._set_raw_volume(self._volume)
+        except Exception as e:
+            self._logger.warning(f"Failed to restore volume in {self.guild.name}({self.guild.id}): {e}")
+
+    def _cancel_transition(self) -> None:
+        """Stops the fade watcher and schedules a volume restore if needed."""
+        if self._transition_task and not self._transition_task.done():
+            self._transition_task.cancel()
+        self._transition_task = None
+
+        if self._fade_active:
+            self._bot.loop.create_task(self._restore_volume())
+
+    def _discard_pregen(self) -> None:
+        if self._pregen_task and not self._pregen_task.done():
+            self._pregen_task.cancel()
+        self._pregen_task = None
+        self._pregen_for_uri = None
+
+    async def _take_pregen(self, track: Track) -> Optional[Track]:
+        """Returns the pre-generated clip for `track`, if one is ready and fresh."""
+        task, uri, started = self._pregen_task, self._pregen_for_uri, self._pregen_started_at
+        self._pregen_task = None
+        self._pregen_for_uri = None
+
+        if not task or uri != track.uri:
+            if task and not task.done():
+                task.cancel()
+            return None
+
+        # The clip is served from an in-memory store with a 300s TTL.
+        if time.time() - started > 240:
+            if not task.done():
+                task.cancel()
+            return None
+
+        try:
+            return await task
+        except asyncio.CancelledError:
+            return None
+        except Exception as e:
+            self._logger.warning(f"Pre-generated announcement failed in {self.guild.name}({self.guild.id}): {e}")
+            return None
+
+    async def _play_overlay(self, clip: Track, duck_to: int) -> bool:
+        """Plays the clip as a mixer layer over the current track.
+
+        Returns False when the node has no audio mixer (plain Lavalink), so
+        the caller can fall back to the fade-and-play-between-songs path.
+        """
+        if self._node._mixer_supported is False:
+            return False
+
+        status = await self._node.mixer_request(
+            RequestMethod.POST,
+            query=f"sessions/{self._node._session_id}/players/{self.guild.id}/mix",
+            data={"encodedTrack": clip.track_id, "volume": 100}
+        )
+
+        if status >= 300:
+            if self._node._mixer_supported is None:
+                self._node._mixer_supported = False
+                self._logger.info(
+                    f"Node [{self._node._identifier}] has no audio mixer (status {status}); "
+                    "announcements will use fade mode."
+                )
+            return False
+
+        self._node._mixer_supported = True
+
+        # Duck the music under the announcement, then bring it back once the
+        # clip has had time to play out.
+        self._fade_active = True
+        await self._set_raw_volume(duck_to)
+        self._bot.loop.create_task(self._restore_volume_after(((clip.length or 0) / 1000) + 1))
+        return True
+
+    async def _restore_volume_after(self, seconds: float) -> None:
+        try:
+            await asyncio.sleep(seconds)
+            await self._restore_volume()
+        except asyncio.CancelledError:
+            pass
+
+    def _start_transition_worker(self, track: Track) -> None:
+        """Starts the pre-generation/fade watcher for the track now playing."""
+        if self._transition_task and not self._transition_task.done():
+            self._transition_task.cancel()
+
+        self._transition_task = self._bot.loop.create_task(self._transition_worker(track))
+
+    async def _transition_worker(self, track: Track) -> None:
+        """Pre-generates the next announcement and fades the outgoing track.
+
+        Runs for the lifetime of one track. Everything here is best-effort:
+        any failure simply means the announcement is generated on demand in
+        do_next with no fade.
+        """
+        try:
+            config = self._transition_config()
+            lead_ms = max(1, config.get("lead", 8)) * 1000
+            fade_ms = max(0, config.get("fade_seconds", 5)) * 1000
+            fade_to = max(0, min(100, config.get("fade_to", 30)))
+
+            if track.is_stream or not track.length or track.length <= lead_ms:
+                return
+
+            if not self._announcement_due():
+                return
+
+            # Wait until the track is within the lead window. Re-checking the
+            # position each tick means pause and seek are handled naturally.
+            while True:
+                remaining = track.length - self._interp_position(track)
+                if remaining <= lead_ms:
+                    break
+                await asyncio.sleep(min(2.0, max(0.25, (remaining - lead_ms) / 1000)))
+
+                if self._current is not track:
+                    return
+
+            # Only fade once we know there is something to fade into.
+            upcoming = self.queue.peek()
+            if not upcoming or not self._announcement_due():
+                return
+
+            self._pregen_for_uri = upcoming.uri
+            self._pregen_started_at = time.time()
+            self._pregen_task = self._bot.loop.create_task(
+                self._announcer.build_announcement(self, upcoming, self._announce_config)
+            )
+
+            clip = await asyncio.shield(self._pregen_task)
+            if not clip or self._current is not track:
+                return
+
+            # Overlay mode plays the clip *over* the outgoing track. When the
+            # node has no mixer we silently fall through to the fade, keeping
+            # the pre-generated clip for do_next.
+            if config.get("mode") == "overlay" and await self._play_overlay(clip, fade_to):
+                self._discard_pregen()
+                self._commit_announcement()
+                return
+
+            if fade_ms <= 0 or fade_to >= self._volume:
+                return
+
+            # Step the volume down over the remaining fade window.
+            steps = 10
+            start_volume = self._volume
+            self._fade_active = True
+            for step in range(1, steps + 1):
+                if self._current is not track or self._paused:
+                    break
+                volume = start_volume - ((start_volume - fade_to) * step / steps)
+                await self._set_raw_volume(volume)
+                await asyncio.sleep((fade_ms / 1000) / steps)
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._logger.warning(f"Announcement transition failed in {self.guild.name}({self.guild.id}): {e}")
+            await self._restore_volume()
 
     async def send_ws(self, payload, requester: Member = None):
         """Sends a WebSocket payload to the bot's IPC (Inter-Process Communication) system."""

@@ -147,7 +147,7 @@
         },
         "tts": {
             "title": "🔊 TTS-Ansagen",
-            "value": "```Status: {0}\nModus: {1}```\n**Vorlage:**\n```{2}```\n**KI-Prompt:**\n```{3}```"
+            "value": "```Status: {0}\nModus: {1}\nJeder: {2} Titel\nAbklingzeit: {3} Min\nTemperatur: {4}```\n**Vorlage:**\n```{5}```\n**KI-Persona:**\n```{6}```\n**KI-Prompt:**\n```{7}```"
         }
     },
     "ping": {

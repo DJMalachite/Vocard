@@ -147,7 +147,7 @@
         },
         "tts": {
             "title": "🔊 Annonces TTS",
-            "value": "```Statut : {0}\nMode : {1}```\n**Modèle :**\n```{2}```\n**Prompt IA :**\n```{3}```"
+            "value": "```Statut : {0}\nMode : {1}\nToutes les : {2} musique(s)\nDélai : {3} min\nTempérature : {4}```\n**Modèle :**\n```{5}```\n**Persona IA :**\n```{6}```\n**Prompt IA :**\n```{7}```"
         }
     },
     "ping": {
