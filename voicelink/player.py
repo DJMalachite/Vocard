@@ -421,8 +421,13 @@ class Player(VoiceProtocol):
         # An overlay announcement finished. When it was talking over an outro
         # the music stays down until the next song starts, so it fades in
         # underneath instead of the old track popping back up to full.
-        if isinstance(event, MixEndedEvent) and not self._duck_until_next_track:
-            await self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
+        if isinstance(event, MixEndedEvent):
+            self._logger.debug(
+                f"Player in {self.guild.name}({self.guild.id}) finished announcement mix {event.mix_id} "
+                f"({event.reason}); holding duck: {self._duck_until_next_track}"
+            )
+            if not self._duck_until_next_track:
+                await self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
 
         event.dispatch(self._bot)
 
@@ -494,6 +499,12 @@ class Player(VoiceProtocol):
         if not track:
             if self.autoplay and await self.get_recommendations():
                 return await self.do_next()
+
+            # Nothing is coming, so there is no next song to fade in under:
+            # bring the volume back now instead of leaving it ducked.
+            self._duck_until_next_track = False
+            await self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
+
             if self.queue.is_empty:
                 self._schedule_inactive_cleanup_timer()
         else:
@@ -1255,19 +1266,22 @@ class Player(VoiceProtocol):
         self._duck_until_next_track = hold_until_next_track
 
         # Normally MixEndedEvent (or the next track starting) brings the music
-        # back; this is the failsafe for when neither arrives.
+        # back; this is the failsafe for when neither arrives. Keep it tight,
+        # it is the difference between a smooth segue and a late jump.
         clip_seconds = (clip.end_time or clip.length or 0) / 1000
-        self._bot.loop.create_task(self._restore_volume_after(clip_seconds + ramp_seconds + 30))
+        self._bot.loop.create_task(
+            self._restore_volume_after(clip_seconds + ramp_seconds + 8, ramp_seconds=ramp_seconds)
+        )
         return True
 
-    async def _restore_volume_after(self, seconds: float) -> None:
+    async def _restore_volume_after(self, seconds: float, ramp_seconds: float = 0) -> None:
         try:
             await asyncio.sleep(seconds)
             if self._fade_active:
                 self._logger.debug(
                     f"Player in {self.guild.name}({self.guild.id}) restoring volume from the announcement failsafe."
                 )
-            await self._restore_volume()
+            await self._restore_volume(ramp_seconds=ramp_seconds)
         except asyncio.CancelledError:
             pass
 
