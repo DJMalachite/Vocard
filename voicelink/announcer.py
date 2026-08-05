@@ -24,24 +24,44 @@ SOFTWARE.
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import os
 import time
 import uuid
+import wave
 import aiohttp
 
 from aiohttp import web
 from discord.ext import commands
 from typing import TYPE_CHECKING, Optional
 
+from .objects import Track
 from .placeholders import PlayerPlaceholder
 from .spotify import SpotifyGenreClient
+from .transformer import decode, encode
 
 if TYPE_CHECKING:
     from .player import Player
-    from .objects import Track
 
 logger = logging.getLogger("vocard.announcer")
+
+# NodeLink writes no source-specific fields for http tracks, unlike Lavalink
+# which appends probe info. These no-op codecs let us round-trip either.
+_HTTP_SOURCE_DECODER = {"http": lambda reader: {}}
+_HTTP_SOURCE_ENCODER = {"http": lambda writer, track: None}
+
+
+def wav_duration_ms(wav: bytes) -> Optional[int]:
+    """Returns the duration of a PCM WAV in milliseconds, or None."""
+    try:
+        with wave.open(io.BytesIO(wav)) as handle:
+            frames, rate = handle.getnframes(), handle.getframerate()
+        if not frames or not rate:
+            return None
+        return int(frames / rate * 1000)
+    except Exception:
+        return None
 
 
 class AnnounceServer:
@@ -318,11 +338,42 @@ class Announcer:
             if not results:
                 logger.warning(f"Lavalink could not load announcement clip from {url}.")
                 return None
-            return results[0]
+
+            return self._stamp_duration(results[0], wav, player)
 
         except Exception as e:
             logger.warning(f"TTS announcement failed for guild {player.guild.id}, playing track normally: {e}")
             return None
+
+    def _stamp_duration(self, clip: Track, wav: bytes, player: Player) -> Track:
+        """Rewrites the clip's encoded track so it carries a real duration.
+
+        Audio servers do not always work out how long an HTTP resource is -
+        NodeLink hardcodes `length: -1` for its http source. A track with no
+        known length never reaches its natural end: playback position stops,
+        the server calls it stuck and restarts it, so the announcement repeats
+        instead of handing back to the song. We know the exact duration, so we
+        stamp it onto the track ourselves.
+        """
+        duration = wav_duration_ms(wav)
+        if not duration:
+            return clip
+
+        try:
+            info = decode(clip.track_id, source_decoders=_HTTP_SOURCE_DECODER)
+            info.setdefault("artworkUrl", None)
+            info.setdefault("isrc", None)
+            info.update({
+                "length": duration,
+                "title": "Announcement",
+                "author": self._bot.user.name if self._bot.user else "Vocard"
+            })
+            encoded = encode(info, source_encoders=_HTTP_SOURCE_ENCODER)
+            return Track(track_id=encoded, info=info, requester=player.guild.me)
+
+        except Exception as e:
+            logger.warning(f"Could not stamp the announcement duration ({e}); playing the clip as-is.")
+            return clip
 
     async def _render_text(self, player: Player, track: Track, guild_cfg: dict) -> Optional[str]:
         ph = PlayerPlaceholder(self._bot, player, track=track)

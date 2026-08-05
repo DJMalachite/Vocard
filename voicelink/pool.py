@@ -250,9 +250,15 @@ class Node:
             self._stats = NodeStats(data)
             return
 
+        # Player-scoped ops must name a guild we still have a player for;
+        # NodeLink also emits events that carry no guild at all.
+        player = None
         if "guildId" in data:
-            if not (player := self._players.get(int(data["guildId"]))):
-                return
+            player = self._players.get(int(data["guildId"]))
+
+        if not player:
+            self._logger.debug(f"Node [{self._identifier}] ignored '{op}' payload with no active player.")
+            return
 
         if op == "event":
             await player._dispatch_event(data)
