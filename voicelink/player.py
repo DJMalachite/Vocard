@@ -636,7 +636,7 @@ class Player(VoiceProtocol):
         self._cancel_transition()
         self._pending_track = None
         self._current = None
-        await self.send(method=RequestMethod.PATCH, data={'encodedTrack': None})
+        await self.send(method=RequestMethod.PATCH, data={"track": {"encoded": None}})
 
     async def disconnect(self, *, force: bool = False):
         """Disconnects the player from voice."""
@@ -674,10 +674,11 @@ class Player(VoiceProtocol):
         if not self._node:
             return track
 
-        # position/endTime must be numbers: Lavalink tolerates numeric strings
-        # but NodeLink rejects the whole payload.
+        # Use the v4 `track.encoded` form: `encodedTrack` is deprecated and
+        # NodeLink refuses it. position/endTime must be numbers, too - Lavalink
+        # tolerates numeric strings but NodeLink rejects the whole payload.
         data = {
-            "encodedTrack": track.track_id,
+            "track": {"encoded": track.track_id},
             "position": int(start or 0)
         }
 
