@@ -491,12 +491,20 @@ class Player(VoiceProtocol):
                 self._discard_pregen()
 
             try:
-                if clip:
+                if clip and self._overlay_available():
+                    # Overlay mode never plays the clip on its own: start the
+                    # song and talk over its intro, the way a radio DJ would.
+                    await self.play(track, start=track.position)
+                    if await self._play_overlay(clip, self._transition_config().get("fade_to", 30)):
+                        self._commit_announcement()
+
+                elif clip:
                     # Stash the real track before playing the clip so the
                     # controller/status/IPC updates below resolve to it.
                     self._pending_track = track
                     self._commit_announcement()
                     await self.play(clip)
+
                 else:
                     await self.play(track, start=track.position)
             except Exception as e:
@@ -1113,6 +1121,13 @@ class Player(VoiceProtocol):
             self._logger.warning(f"Pre-generated announcement failed in {self.guild.name}({self.guild.id}): {e}")
             return None
 
+    def _overlay_available(self) -> bool:
+        """Whether announcements should be mixed over the music."""
+        return (
+            self._transition_config().get("mode") == "overlay"
+            and self._node._mixer_supported is not False
+        )
+
     async def _play_overlay(self, clip: Track, duck_to: int) -> bool:
         """Plays the clip as a mixer layer over the current track.
 
@@ -1215,7 +1230,7 @@ class Player(VoiceProtocol):
             # Overlay mode plays the clip *over* the outgoing track. When the
             # node has no mixer we silently fall through to the fade, keeping
             # the pre-generated clip for do_next.
-            if config.get("mode") == "overlay" and await self._play_overlay(clip, fade_to):
+            if self._overlay_available() and await self._play_overlay(clip, fade_to):
                 self._discard_pregen()
                 self._commit_announcement()
                 return
