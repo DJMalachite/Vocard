@@ -2,10 +2,57 @@
     <img src="https://img.shields.io/discord/811542332678996008?color=7289DA&label=Support&logo=discord&style=for-the-badge" alt="Discord">
 </a>
 
-# Vocard Bot
+# Vocard Bot (custom fork)
+
 Vocard is a highly customizable Discord music bot, designed to deliver a user-friendly experience. It offers support for a wide range of streaming platforms including Youtube, Soundcloud, Spotify, Twitch, and more.
 
+This is a personal fork of [ChocoMeow/Vocard](https://github.com/ChocoMeow/Vocard) that adds
+**TTS song announcements** and a one-command Docker development stack. Day-to-day work happens on
+the `beta` branch.
+
+## Fork additions
+
+### 🔊 TTS song announcements
+
+The bot can announce the next song in the voice channel using a local
+[Piper](https://github.com/OHF-Voice/piper1-gpl) TTS server. Two per-guild modes:
+
+* **Simple** — a template such as `Up next: @@track_name@@ by @@track_author@@`, using the same
+  placeholder system as the music controller
+* **AI** — text written by any OpenAI-compatible endpoint (OpenAI or a local
+  [Ollama](https://ollama.com)), with a configurable persona and temperature
+
+Features:
+
+* **Smooth transitions** — the clip is generated *before* the song ends and the music fades down
+  into it, so there is no gap and no abrupt cut
+* **Frequency and cooldown** — announce every Nth song, and/or at most once every X minutes
+* **`@@track_genre@@`** — real genre data via the Spotify API, cached per artist
+* **Fail-open** — if Piper, the AI endpoint or the network misbehaves, the song simply plays
+  without an announcement and a warning is logged; playback is never blocked
+* **Voice tuning** — speed, expressiveness and cadence are configurable per request, so you can
+  change how the voice sounds without touching the Piper container
+
+Configure per guild with `/settings announce` (requires Manage Server). Full setup and tuning
+guide: **[docs/tts-announce.md](docs/tts-announce.md)**.
+
+### 🐳 Docker development stack
+
+`docker-compose.dev.yml` brings up the bot, Lavalink (with the YouTube plugin and LavaSrc for
+Spotify), MongoDB, Piper TTS, the [dashboard](https://github.com/ChocoMeow/Vocard-Dashboard) and
+a Spotify tokener — all wired together by service name.
+
+```bash
+cp .env.example .env          # fill in TOKEN and CLIENT_ID
+docker compose -f docker-compose.dev.yml up -d --build
+```
+
+`settings.json` is created from `settings.docker.json` on first boot, so no config editing is
+needed to get started. The project directory is mounted into the bot container, so code changes
+only need `docker compose restart vocard` (rebuild only when `requirements.txt` changes).
+
 ## Features
+
 * Fast song loading
 * Works with slash and message commands
 * Lightweight design
@@ -28,10 +75,26 @@ Vocard is a highly customizable Discord music bot, designed to deliver a user-fr
 ## Requirements
 * [Python 3.11+](https://www.python.org/downloads/)
 * [Lavalink Server (Requires 4.0.0+)](https://github.com/freyacodes/Lavalink)
+* Optional, for announcements: a [Piper](https://github.com/OHF-Voice/piper1-gpl) HTTP server
+  (included in the Docker stack)
 
 ## Setup
-Please see the [Setup Page](https://docs.vocard.xyz/latest/bot/setup) in the docs to run this bot yourself!
+
+For the Docker stack, see [Docker development stack](#-docker-development-stack) above. To run the
+bot directly, follow the upstream [Setup Page](https://docs.vocard.xyz/latest/bot/setup).
+
+## Development
+
+```bash
+pip install -r requirements.txt
+python tests/runner.py          # static checks; no token, database or network needed
+python main.py
+```
+
+Tests enforce that every file in `langs/` matches `EN.json` exactly and that every language key
+used in code exists — run them after touching any user-facing string. See
+[CLAUDE.md](CLAUDE.md) for the architecture overview.
 
 ## Need Help?
-Join the [Vocard Support Discord](https://discord.gg/wRCgB7vBQv) for help or questions.
-
+Join the [Vocard Support Discord](https://discord.gg/wRCgB7vBQv) for help or questions about
+upstream Vocard. Issues specific to this fork belong in this repository.
