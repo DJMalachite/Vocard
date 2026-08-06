@@ -46,6 +46,10 @@ services:
       - NODELINK_SERVER_HOST=0.0.0.0
       - NODELINK_SERVER_PORT=2333
       - NODELINK_SERVER_PASSWORD=youshallnotpass
+      # The node is only reachable from this compose network, and announcement
+      # fades send a burst of volume updates that the default per-guild limit
+      # (20 requests / 5s) rejects.
+      - NODELINK_RATELIMIT_ENABLED=false
       # Audio mixer - required for overlay announcements.
       - NODELINK_MIX_ENABLED=true
       - NODELINK_MIX_DEFAULTVOLUME=0.8

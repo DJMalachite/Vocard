@@ -1104,19 +1104,36 @@ class Player(VoiceProtocol):
         """Changes the Lavalink volume without touching the player's stored volume."""
         await self.send(method=RequestMethod.PATCH, data={"volume": int(volume)})
 
-    async def _ramp_volume(self, target: int, seconds: float, steps: int = 12) -> None:
-        """Slides the playback volume to `target` over `seconds`."""
+    async def _ramp_volume(self, target: int, seconds: float) -> None:
+        """Slides the playback volume to `target` over `seconds`.
+
+        Every step is a REST call and nodes rate-limit per guild, so the step
+        count is kept low and a rejected step is never fatal: a slightly
+        chunkier fade is much better than a lost announcement.
+        """
         start = self._raw_volume
         if seconds <= 0 or start == target:
             self._raw_volume = target
-            await self._set_raw_volume(target)
+            await self._safe_set_volume(target)
             return
+
+        # One step every ~0.5s, between 3 and 8 of them.
+        steps = max(3, min(8, int(seconds / 0.5)))
 
         for step in range(1, steps + 1):
             volume = round(start + ((target - start) * step / steps))
             self._raw_volume = volume
-            await self._set_raw_volume(volume)
+            await self._safe_set_volume(volume)
             await asyncio.sleep(seconds / steps)
+
+    async def _safe_set_volume(self, volume: int) -> bool:
+        """Sets the volume, treating a node error as a skipped fade step."""
+        try:
+            await self._set_raw_volume(volume)
+            return True
+        except Exception as e:
+            self._logger.debug(f"Volume step to {volume} was rejected in {self.guild.name}({self.guild.id}): {e}")
+            return False
 
     async def _restore_volume(self, ramp_seconds: float = 0) -> None:
         """Brings the volume back up after a duck or fade. Idempotent."""
@@ -1237,9 +1254,13 @@ class Player(VoiceProtocol):
         if self._node._mixer_supported is False:
             return False
 
-        # Duck first so the music is already down when the voice comes in.
+        # Duck first so the music is already down when the voice comes in. A
+        # failed duck is cosmetic - the announcement still has to play.
         self._fade_active = True
-        await self._ramp_volume(duck_to, ramp_seconds)
+        try:
+            await self._ramp_volume(duck_to, ramp_seconds)
+        except Exception as e:
+            self._logger.warning(f"Could not duck the music in {self.guild.name}({self.guild.id}): {e}")
 
         mix_volume = self._transition_config().get("overlay_volume", 100)
         status = await self._node.mixer_request(
