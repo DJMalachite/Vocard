@@ -69,8 +69,19 @@ services:
       - NODELINK_SOURCES_SPOTIFY_ENABLED=true
       - NODELINK_SOURCES_SPOTIFY_CLIENTID=${SPOTIFY_CLIENT_ID:-}
       - NODELINK_SOURCES_SPOTIFY_CLIENTSECRET=${SPOTIFY_CLIENT_SECRET:-}
+      # Recommendations (sprec:) use Spotify's internal API, which needs an
+      # anonymous token rather than app credentials. Point at our own tokener
+      # instead of NodeLink's default public one, which times out.
+      - NODELINK_SOURCES_SPOTIFY_EXTERNALAUTHURL=http://spotify-tokener:49152/api/token
     ports:
       - "2333:2333"
+
+  spotify-tokener:
+    image: ghcr.io/topi314/spotify-tokener:master
+    container_name: vocard-spotify-tokener
+    restart: unless-stopped
+    environment:
+      - SPOTIFY_TOKENER_ADDR=0.0.0.0:49152
 
   yt-cipher:
     image: ghcr.io/kikkia/yt-cipher:master

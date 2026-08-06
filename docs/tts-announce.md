@@ -163,6 +163,17 @@ gap. Configured globally under `announce_settings.transition`:
 Fading only happens when an announcement is actually coming: live streams, short tracks,
 autoplay picks, and non-announced songs all play through untouched.
 
+### Spotify credentials: what they do and don't cover
+
+`announce_settings.spotify` (and `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`) are used by the
+**bot** for genre lookups, and passed to NodeLink for Spotify search and metadata.
+
+They do **not** fix `sprec:` recommendation timeouts. NodeLink resolves recommendations through
+Spotify's internal client API, which needs an *anonymous* token rather than app credentials — it
+fetches one from `externalAuthUrl`, and the built-in default is a shared public service that gets
+rate limited. The compose file therefore runs a `spotify-tokener` container and points NodeLink
+at it. Failed recommendations are harmless either way: they log a warning and autoplay carries on.
+
 ### Genre lookup (`@@track_genre@@`)
 
 Spotify is the only source that exposes genre data, and it attaches genres to *artists*.
