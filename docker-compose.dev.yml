@@ -57,7 +57,9 @@ services:
       - NODELINK_MIX_AUTOCLEANUP=true
       # Sources. YouTube playback needs a cipher service (self-hosted below).
       - NODELINK_SOURCES_YOUTUBE_ENABLED=true
-      - NODELINK_SOURCES_YOUTUBE_CIPHER_URL=http://yt-cipher:8001/api
+      # yt-cipher serves /get_sts and /decrypt_signature at the root; NodeLink
+      # appends those paths, so this must not include a /api suffix.
+      - NODELINK_SOURCES_YOUTUBE_CIPHER_URL=http://yt-cipher:8001
       - NODELINK_SOURCES_SOUNDCLOUD_ENABLED=true
       - NODELINK_SOURCES_BANDCAMP_ENABLED=true
       - NODELINK_SOURCES_TWITCH_ENABLED=true

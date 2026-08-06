@@ -122,7 +122,14 @@ class SpotifyGenreClient:
 
         async with session.post(TOKEN_URL, headers=headers, data={"grant_type": "client_credentials"}) as resp:
             if resp.status != 200:
-                logger.warning(f"Spotify token request returned status {resp.status}.")
+                detail = (await resp.text())[:200]
+                if resp.status in (400, 401):
+                    logger.warning(
+                        "Spotify rejected the credentials in announce_settings.spotify "
+                        f"(or SPOTIFY_CLIENT_ID/SECRET), so @@track_genre@@ will be empty: {detail}"
+                    )
+                else:
+                    logger.warning(f"Spotify token request returned status {resp.status}: {detail}")
                 return None
 
             data = await resp.json()

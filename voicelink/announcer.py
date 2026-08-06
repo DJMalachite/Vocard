@@ -312,6 +312,11 @@ class Announcer:
 
     async def start(self) -> None:
         await self._server.start()
+        if not self._spotify.is_configured:
+            logger.info(
+                "No Spotify credentials configured, so @@track_genre@@ will always be empty. "
+                "Set announce_settings.spotify or SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET to enable it."
+            )
 
     async def stop(self) -> None:
         await self._server.stop()

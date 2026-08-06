@@ -24,6 +24,7 @@ SOFTWARE.
 from __future__ import annotations
 
 import logging
+import time
 
 from typing import Optional, List, TYPE_CHECKING
 from tldextract import extract
@@ -35,6 +36,10 @@ from .utils import format_ms
 from .transformer import encode, decode
 
 logger = logging.getLogger("vocard.objects")
+
+# Per-source backoff after a failed recommendation lookup.
+_RECOMMENDATION_COOLDOWN = 900
+_RECOMMENDATION_COOLDOWNS: dict[str, float] = {}
 
 if TYPE_CHECKING:
     from .pool import Node
@@ -118,15 +123,27 @@ class Track:
         rec_type = TrackRecType.from_platform(self.source)
         if not rec_type:
             return []
-        
+
+        # Sources rate-limit recommendations for long stretches (Spotify backs
+        # off for a day), and each doomed attempt costs a slow timeout. Once
+        # one fails, stop asking this source for a while.
+        if (retry_at := _RECOMMENDATION_COOLDOWNS.get(self.source, 0)) > time.time():
+            return []
+
         query = rec_type.format(track_id=self.identifier)
         try:
             tracks = await node.get_tracks(query=query, requester=node.bot.user)
         except Exception as e:
             # Recommendations are a nicety: a rate-limited or slow source must
             # not take down autoplay, which calls this from do_next.
-            logger.warning(f"Could not fetch recommendations for '{self.title}': {e}")
+            _RECOMMENDATION_COOLDOWNS[self.source] = time.time() + _RECOMMENDATION_COOLDOWN
+            logger.warning(
+                f"Could not fetch recommendations for '{self.title}': {e}. "
+                f"Skipping {self.source} recommendations for {_RECOMMENDATION_COOLDOWN // 60} minutes."
+            )
             return []
+
+        _RECOMMENDATION_COOLDOWNS.pop(self.source, None)
 
         if not tracks:
             return []
