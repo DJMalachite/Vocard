@@ -143,6 +143,9 @@ class Player(VoiceProtocol):
         self._transition_task: Optional[asyncio.Task] = None
         self._fade_active: bool = False
         self._duck_until_next_track: bool = False
+        # Set once the node reports real audio flowing, which can lag the play
+        # request by seconds while a source buffers.
+        self._playback_started: asyncio.Event = asyncio.Event()
         self._raw_volume: int = self.settings.get('volume', 100)
         self._songs_since_announce: int = 0
         self._last_announce_ts: float = 0.0
@@ -433,6 +436,7 @@ class Player(VoiceProtocol):
 
         if isinstance(event, TrackStartEvent):
             self._ending_track = self._current
+            self._playback_started.set()
 
             # A real song started (during a clip, _pending_track is set):
             # count it towards the announcement frequency and begin watching
@@ -726,6 +730,7 @@ class Player(VoiceProtocol):
         if end or track.end_time:
             data["endTime"] = int(end or track.end_time)
 
+        self._playback_started.clear()
         await self.send(
             method=RequestMethod.PATCH,
             query=f"noReplace={str(ignore_if_playing).lower()}",
@@ -1244,6 +1249,17 @@ class Player(VoiceProtocol):
             and self._node._mixer_supported is not False
         )
 
+    async def _wait_for_playback(self, timeout: float = 20) -> bool:
+        """Waits until the node reports the current track actually playing."""
+        if self._playback_started.is_set():
+            return True
+
+        try:
+            await asyncio.wait_for(self._playback_started.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
     async def _play_overlay(
         self,
         clip: Track,
@@ -1263,6 +1279,16 @@ class Player(VoiceProtocol):
         jumping back to full for its last couple of seconds.
         """
         if self._node._mixer_supported is False:
+            return False
+
+        # A mix layer added before the main track is actually producing audio
+        # is discarded, and sources can take seconds to start (YouTube's SABR
+        # path backs off before its first byte). Wait for real playback first.
+        if not await self._wait_for_playback():
+            self._logger.warning(
+                f"Playback in {self.guild.name}({self.guild.id}) did not start in time; "
+                "skipping the announcement rather than losing it silently."
+            )
             return False
 
         # Duck first so the music is already down when the voice comes in. A
