@@ -209,8 +209,20 @@ class Node:
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     self._logger.error(f"WebSocket error for node [{self._identifier}]")
                     break
-                
-                self._bot.loop.create_task(self._handle_payload(msg.json()))
+
+                # Only text frames carry payloads. Ping, pong and close frames
+                # hold ints or raw bytes, and decoding those as JSON used to
+                # raise and drop the whole connection.
+                if msg.type not in (aiohttp.WSMsgType.TEXT, aiohttp.WSMsgType.BINARY):
+                    continue
+
+                try:
+                    payload = msg.json()
+                except (TypeError, ValueError) as e:
+                    self._logger.warning(f"Node [{self._identifier}] sent an undecodable payload: {e}")
+                    continue
+
+                self._bot.loop.create_task(self._handle_payload(payload))
 
             except aiohttp.ClientConnectionError as e:
                 self._logger.error(f"Connection error: {e}")
