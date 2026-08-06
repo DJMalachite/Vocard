@@ -95,11 +95,12 @@
         },
         "transition": {
             "mode": "overlay",
-            "lead": 20,
-            "fade_seconds": 5,
-            "fade_to": 35,
-            "overlay_volume": 100,
-            "overlay_tail": 2
+            "prepare_at_percent": 50,
+            "min_track_seconds": 30,
+            "duck_to": 30,
+            "duck_fade_seconds": 3,
+            "announce_volume": 100,
+            "tail_seconds": 2
         }
     },
     "sources_settings": {

@@ -427,7 +427,7 @@ class Player(VoiceProtocol):
                 f"({event.reason}); holding duck: {self._duck_until_next_track}"
             )
             if not self._duck_until_next_track:
-                await self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
+                await self._restore_volume(ramp_seconds=self._duck_fade_seconds)
 
         event.dispatch(self._bot)
 
@@ -445,7 +445,7 @@ class Player(VoiceProtocol):
                 if self._duck_until_next_track:
                     self._duck_until_next_track = False
                     self._bot.loop.create_task(
-                        self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
+                        self._restore_volume(ramp_seconds=self._duck_fade_seconds)
                     )
 
                 if self._announcer:
@@ -503,7 +503,7 @@ class Player(VoiceProtocol):
             # Nothing is coming, so there is no next song to fade in under:
             # bring the volume back now instead of leaving it ducked.
             self._duck_until_next_track = False
-            await self._restore_volume(ramp_seconds=self._transition_config().get("fade_seconds", 5))
+            await self._restore_volume(ramp_seconds=self._duck_fade_seconds)
 
             if self.queue.is_empty:
                 self._schedule_inactive_cleanup_timer()
@@ -524,8 +524,8 @@ class Player(VoiceProtocol):
                     config = self._transition_config()
                     if await self._play_overlay(
                         clip,
-                        config.get("fade_to", 30),
-                        ramp_seconds=min(1.5, config.get("fade_seconds", 5))
+                        self._duck_to,
+                        ramp_seconds=min(1.5, self._duck_fade_seconds)
                     ):
                         self._commit_announcement()
 
@@ -1088,6 +1088,16 @@ class Player(VoiceProtocol):
     def _transition_config(self) -> dict:
         return Config().announce_settings.get("transition", {})
 
+    @property
+    def _duck_fade_seconds(self) -> float:
+        """How long the volume takes to slide down to, and back up from, the duck."""
+        return max(0, self._transition_config().get("duck_fade_seconds", 3))
+
+    @property
+    def _duck_to(self) -> int:
+        """The volume the music sits at underneath an announcement."""
+        return max(0, min(100, self._transition_config().get("duck_to", 30)))
+
     def _interp_position(self, track: Track) -> float:
         """Interpolated playback position in ms, clamped to the track length.
 
@@ -1196,17 +1206,18 @@ class Player(VoiceProtocol):
         the outro but early enough to finish first.
         """
         clip_ms = clip.end_time or clip.length or 0
-        tail_ms = max(0, config.get("overlay_tail", 2)) * 1000
-        fade_seconds = max(0, config.get("fade_seconds", 5))
+        tail_ms = max(0, config.get("tail_seconds", 2)) * 1000
+        fade_seconds = self._duck_fade_seconds
 
         if clip_ms:
             remaining = track.length - self._interp_position(track)
 
-            # Too little of the track left to fit the announcement: leave it
-            # for do_next, which plays it over the next song's intro instead.
-            if remaining < clip_ms * 0.75:
+            # The announcement has to finish before the track does, or the
+            # server clears the mix layer mid-sentence. When it cannot fit,
+            # leave the clip for do_next to play over the next song's intro.
+            if remaining < clip_ms + tail_ms:
                 self._logger.debug(
-                    f"Player in {self.guild.name}({self.guild.id}) has only {remaining:.0f}ms left for a "
+                    f"Player in {self.guild.name}({self.guild.id}) has {remaining:.0f}ms left, too little for a "
                     f"{clip_ms}ms announcement; overlaying it on the next track instead."
                 )
                 return False
@@ -1262,7 +1273,7 @@ class Player(VoiceProtocol):
         except Exception as e:
             self._logger.warning(f"Could not duck the music in {self.guild.name}({self.guild.id}): {e}")
 
-        mix_volume = self._transition_config().get("overlay_volume", 100)
+        mix_volume = self._transition_config().get("announce_volume", 100)
         status = await self._node.mixer_request(
             RequestMethod.POST,
             query=f"sessions/{self._node._session_id}/players/{self.guild.id}/mix",
@@ -1322,28 +1333,28 @@ class Player(VoiceProtocol):
         """
         try:
             config = self._transition_config()
-            lead_ms = max(1, config.get("lead", 8)) * 1000
-            fade_ms = max(0, config.get("fade_seconds", 5)) * 1000
-            fade_to = max(0, min(100, config.get("fade_to", 30)))
+            min_track_ms = max(0, config.get("min_track_seconds", 30)) * 1000
+            prepare_percent = max(1, min(95, config.get("prepare_at_percent", 50)))
+            duck_to = self._duck_to
 
-            if track.is_stream or not track.length or track.length <= lead_ms:
+            if track.is_stream or not track.length or track.length < min_track_ms:
                 return
 
             if not self._announcement_due():
                 return
 
-            # Wait until the track is within the lead window. Re-checking the
-            # position each tick means pause and seek are handled naturally.
-            while True:
-                remaining = track.length - self._interp_position(track)
-                if remaining <= lead_ms:
-                    break
-                await asyncio.sleep(min(2.0, max(0.25, (remaining - lead_ms) / 1000)))
+            # Generate well ahead of time rather than just before the end.
+            # Synthesis takes anywhere from a second to half a minute, and
+            # doing it on the critical path is what made the announcement land
+            # in a different place on every song.
+            prepare_at = track.length * (prepare_percent / 100)
+            while self._interp_position(track) < prepare_at:
+                remaining_to_prepare = (prepare_at - self._interp_position(track)) / 1000
+                await asyncio.sleep(min(5.0, max(0.25, remaining_to_prepare)))
 
                 if self._current is not track:
                     return
 
-            # Only fade once we know there is something to fade into.
             upcoming = self.queue.peek()
             if not upcoming or not self._announcement_due():
                 return
@@ -1362,20 +1373,21 @@ class Player(VoiceProtocol):
             # node has no mixer we silently fall through to the fade, keeping
             # the pre-generated clip for do_next.
             if self._overlay_available():
-                if await self._overlay_over_outro(track, clip, config, fade_to):
+                if await self._overlay_over_outro(track, clip, config, duck_to):
                     self._discard_pregen()
                     self._commit_announcement()
                 # Either way the clip stays available: if there was not enough
                 # of the track left, do_next plays it over the next song.
                 return
 
-            if fade_ms <= 0 or fade_to >= self._volume:
+            duck_fade = self._duck_fade_seconds
+            if duck_fade <= 0 or duck_to >= self._volume:
                 return
 
             # Fade the outgoing track down; do_next brings it back for the
             # announcement and the song that follows.
             self._fade_active = True
-            await self._ramp_volume(fade_to, fade_ms / 1000)
+            await self._ramp_volume(duck_to, duck_fade)
 
         except asyncio.CancelledError:
             raise

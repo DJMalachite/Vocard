@@ -212,35 +212,51 @@ real radio DJ talking over the outro.
 The default stack (`docker-compose.dev.yml`) uses NodeLink, and `settings.docker.json` ships with:
 
 ```json
-"transition": { "mode": "overlay", "lead": 20, "fade_seconds": 5, "fade_to": 35, "overlay_volume": 100, "overlay_tail": 2 }
+"transition": {
+    "mode": "overlay",
+    "prepare_at_percent": 50,
+    "min_track_seconds": 30,
+    "duck_to": 30,
+    "duck_fade_seconds": 3,
+    "announce_volume": 100,
+    "tail_seconds": 2
+}
 ```
 
-- `overlay_volume` — announcement loudness (0–100, sent to NodeLink as a 0.0–1.0 mix volume)
-- `fade_to` — the volume the music ducks to underneath the announcement
-- `fade_seconds` — how long the ramps down and up take
-- `lead` — how many seconds before the end to start preparing the clip. This is a *budget*,
-  not the announcement's start time: generation has to finish comfortably before the clip is
-  due to play, so give it room
-- `overlay_tail` — seconds of music that should still play after the announcement finishes
+| Setting | Meaning |
+|---|---|
+| `mode` | `overlay` mixes the announcement over the music; `fade` plays it between songs (Lavalink) |
+| `prepare_at_percent` | how far into a song to start writing and synthesizing the announcement |
+| `min_track_seconds` | tracks shorter than this are never announced over |
+| `duck_to` | the volume the music sits at underneath the announcement |
+| `duck_fade_seconds` | how long the volume takes to slide down, and back up |
+| `announce_volume` | announcement loudness, 0–100 |
+| `tail_seconds` | music that keeps playing after the announcement finishes |
 
-The sequence, for a 6-second announcement with `fade_seconds: 5` and `overlay_tail: 2`:
+**The announcement always lands in the same place.** Generation is done in the background from
+the halfway point of the song, so however long the AI and Piper take, the speaking slot is
+computed purely from the clip's measured length:
 
 | When | What happens |
 |---|---|
-| end − 20s (`lead`) | the announcement is written and synthesized in the background |
-| end − 13s | music ramps down from 100% to `fade_to` over `fade_seconds` |
+| 50% through (`prepare_at_percent`) | announcement is written and synthesized in the background |
+| end − 11s | music ramps down to `duck_to` over `duck_fade_seconds` |
 | end − 8s | announcement starts over the ducked music |
-| end − 2s (`overlay_tail`) | announcement ends — the music **stays** ducked |
-| end | song finishes, the next one starts quietly and ramps back to 100% |
+| end − 2s (`tail_seconds`) | announcement ends — the music **stays** ducked |
+| end | song finishes, the next one starts quietly and ramps back up |
+
+(The 11s and 8s above are for a 6-second clip: the slot is always
+`clip + tail_seconds + duck_fade_seconds` before the end.)
 
 Holding the duck through the track change is deliberate: it stops the outgoing song from
 jumping back to full for its last couple of seconds, and lets the next one fade in underneath.
 
-The announcement is scheduled from its own measured duration so it always finishes before the
-song does — the server clears every mix layer the moment the main track ends, and an
-announcement still talking at that point would be cut off mid-sentence. If a song is too short
-to fit the announcement in its outro, it is played over the **next** song's intro instead
-rather than being truncated.
+Timing it from the clip's real length matters because the server clears every mix layer the
+moment the main track ends — an announcement still talking then would be cut off mid-sentence.
+If a clip genuinely cannot fit before the end (a very long announcement, or a short song), it
+is kept and played over the **next** song's intro rather than being truncated. Making the
+announcements shorter — a tighter prompt, or a lower `max_text_length` — keeps them on the
+outro where they belong.
 
 The bot ducks the music, posts the clip as a mix layer, and restores the volume when NodeLink
 emits `MixEndedEvent` (with a timer as a failsafe). Mixing must be enabled server-side —
