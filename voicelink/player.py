@@ -143,6 +143,7 @@ class Player(VoiceProtocol):
         self._transition_task: Optional[asyncio.Task] = None
         self._fade_active: bool = False
         self._duck_until_next_track: bool = False
+        self._mix_audible_until: float = 0.0
         # Set once the node reports real audio flowing, which can lag the play
         # request by seconds while a source buffers.
         self._playback_started: asyncio.Event = asyncio.Event()
@@ -430,7 +431,14 @@ class Player(VoiceProtocol):
                 f"({event.reason}); holding duck: {self._duck_until_next_track}"
             )
             if not self._duck_until_next_track:
-                await self._restore_volume(ramp_seconds=self._duck_fade_seconds)
+                # Wait out whatever is left of the clip: "finished" here means
+                # the node finished reading it, not that it finished playing.
+                self._bot.loop.create_task(
+                    self._restore_volume_after(
+                        max(0.0, self._mix_audible_until - time.monotonic()),
+                        ramp_seconds=self._duck_fade_seconds
+                    )
+                )
 
         event.dispatch(self._bot)
 
@@ -531,7 +539,7 @@ class Player(VoiceProtocol):
                         self._duck_to,
                         ramp_seconds=min(1.5, self._duck_fade_seconds)
                     ):
-                        self._commit_announcement()
+                        self._commit_announcement(announced_track_started=True)
 
                 elif clip:
                     # Stash the real track before playing the clip so the
@@ -1085,9 +1093,15 @@ class Player(VoiceProtocol):
 
         return True
 
-    def _commit_announcement(self) -> None:
-        """Records that an announcement is playing, resetting frequency state."""
-        self._songs_since_announce = 0
+    def _commit_announcement(self, *, announced_track_started: bool = False) -> None:
+        """Records that an announcement is playing, resetting frequency state.
+
+        The announced song counts as the first of the new cycle. When it is
+        already playing - an announcement over its intro - TrackStart has
+        counted it, and zeroing here would count it a second time and swallow
+        the next announcement.
+        """
+        self._songs_since_announce = 1 if announced_track_started else 0
         self._last_announce_ts = time.time()
 
     def _transition_config(self) -> dict:
@@ -1323,10 +1337,16 @@ class Player(VoiceProtocol):
         self._node._mixer_supported = True
         self._duck_until_next_track = hold_until_next_track
 
+        # The node reports a mix "finished" once it has *read* the clip, which
+        # for a small file is almost immediately - long before the audio has
+        # been heard. Track when the clip can genuinely be over so the music
+        # is never brought back up over the top of it.
+        clip_seconds = (clip.end_time or clip.length or 0) / 1000
+        self._mix_audible_until = time.monotonic() + clip_seconds
+
         # Normally MixEndedEvent (or the next track starting) brings the music
         # back; this is the failsafe for when neither arrives. Keep it tight,
         # it is the difference between a smooth segue and a late jump.
-        clip_seconds = (clip.end_time or clip.length or 0) / 1000
         self._bot.loop.create_task(
             self._restore_volume_after(clip_seconds + ramp_seconds + 8, ramp_seconds=ramp_seconds)
         )
