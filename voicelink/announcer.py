@@ -48,10 +48,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger("vocard.announcer")
 
 # Discord voice - and therefore NodeLink's audio mixer - works in 48 kHz
-# stereo signed 16-bit PCM.
+# stereo signed 16-bit PCM, read one 20ms frame at a time.
 MIXER_SAMPLE_RATE = 48000
 MIXER_CHANNELS = 2
 MIXER_SAMPLE_WIDTH = 2
+MIXER_FRAME_BYTES = 3840
 
 
 def wav_format(wav: bytes) -> Optional[tuple[int, int, int, int]]:
@@ -104,7 +105,20 @@ def to_mixer_pcm(wav: bytes) -> bytes:
     through lines the clip up against the wrong samples and it comes out as
     noise rather than speech.
 
-    Converting here keeps the mixer's assumption true whichever voice is
+    The clip is also padded out to a whole number of 20ms mixer frames.
+    `readLayerChunks` drains a layer 3840 bytes at a time, but only retires it
+    once the buffer is *exactly* empty:
+
+        if (layer.ringBuffer.length < safeSize) {
+          if (layer.finishedFeeding && layer.ringBuffer.length === 0) {
+            if (this.autoCleanup) this.removeLayer(id, 'FINISHED')
+
+    A final part-frame is therefore too small to read but not empty either, so
+    the layer is never retired and MixEnded never fires - the music stays
+    ducked until the failsafe timer rescues it. A few milliseconds of trailing
+    silence is inaudible and keeps the drain landing on zero.
+
+    Converting here keeps the mixer's assumptions true whichever voice is
     configured, and leaves an already-correct clip untouched.
     """
     fmt = wav_format(wav)
@@ -120,49 +134,64 @@ def to_mixer_pcm(wav: bytes) -> bytes:
         )
         return wav
 
-    if (channels, rate) == (MIXER_CHANNELS, MIXER_SAMPLE_RATE):
-        return wav
-
     if not frames:
         return wav
 
-    logger.debug(f"Converting announcement clip from {rate}Hz/{channels}ch to {MIXER_SAMPLE_RATE}Hz/{MIXER_CHANNELS}ch.")
+    native = (channels, rate) == (MIXER_CHANNELS, MIXER_SAMPLE_RATE)
+    if native and (frames * channels * width) % MIXER_FRAME_BYTES == 0:
+        return wav
+
     samples = _read_samples(wav, frames)
 
-    # Collapse to a single channel first. Piper is mono, and averaging keeps a
-    # multi-channel voice centred instead of dropping half of it.
-    if channels > 1:
-        mono = array.array("h", bytes(2 * frames))
-        for i in range(frames):
-            base = i * channels
-            mono[i] = sum(samples[base:base + channels]) // channels
-        samples = mono
+    if not native:
+        logger.debug(
+            f"Converting announcement clip from {rate}Hz/{channels}ch "
+            f"to {MIXER_SAMPLE_RATE}Hz/{MIXER_CHANNELS}ch."
+        )
 
-    # Linear interpolation is plenty for speech, and this runs off the hot
-    # path - the transition worker generates the clip well before it is needed.
-    out_frames = int(frames * MIXER_SAMPLE_RATE / rate)
-    out = array.array("h", bytes(2 * MIXER_CHANNELS * out_frames))
-    step = rate / MIXER_SAMPLE_RATE
-    last = frames - 1
+        # Collapse to a single channel first. Piper is mono, and averaging
+        # keeps a multi-channel voice centred instead of dropping half of it.
+        if channels > 1:
+            mono = array.array("h", bytes(MIXER_SAMPLE_WIDTH * frames))
+            for i in range(frames):
+                base = i * channels
+                mono[i] = sum(samples[base:base + channels]) // channels
+            samples = mono
 
-    for i in range(out_frames):
-        pos = i * step
-        left = int(pos)
-        start = samples[left]
-        end = samples[left + 1] if left < last else start
-        value = int(start + (end - start) * (pos - left))
-        out[2 * i] = value
-        out[2 * i + 1] = value
+        # Linear interpolation is plenty for speech, and this runs off the hot
+        # path - the transition worker generates the clip well before it is
+        # needed.
+        out_frames = int(frames * MIXER_SAMPLE_RATE / rate)
+        out = array.array("h", bytes(MIXER_SAMPLE_WIDTH * MIXER_CHANNELS * out_frames))
+        step = rate / MIXER_SAMPLE_RATE
+        last = frames - 1
+
+        for i in range(out_frames):
+            pos = i * step
+            left = int(pos)
+            start = samples[left]
+            end = samples[left + 1] if left < last else start
+            value = int(start + (end - start) * (pos - left))
+            out[2 * i] = value
+            out[2 * i + 1] = value
+
+        samples = out
+
+    frame_samples = MIXER_FRAME_BYTES // MIXER_SAMPLE_WIDTH
+    if short := len(samples) % frame_samples:
+        padding = frame_samples - short
+        logger.debug(f"Padding announcement clip with {padding} samples to land on a whole mixer frame.")
+        samples.frombytes(bytes(MIXER_SAMPLE_WIDTH * padding))
 
     if sys.byteorder == "big":
-        out.byteswap()
+        samples.byteswap()
 
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as handle:
         handle.setnchannels(MIXER_CHANNELS)
         handle.setsampwidth(MIXER_SAMPLE_WIDTH)
         handle.setframerate(MIXER_SAMPLE_RATE)
-        handle.writeframes(out.tobytes())
+        handle.writeframes(samples.tobytes())
 
     return buffer.getvalue()
 
