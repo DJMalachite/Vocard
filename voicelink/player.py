@@ -1341,7 +1341,9 @@ class Player(VoiceProtocol):
         # for a small file is almost immediately - long before the audio has
         # been heard. Track when the clip can genuinely be over so the music
         # is never brought back up over the top of it.
-        clip_seconds = (clip.end_time or clip.length or 0) / 1000
+        # An http-sourced clip carries length -1, so clamp: a negative duration
+        # would put _mix_audible_until in the past and lift the duck instantly.
+        clip_seconds = max(0, (clip.end_time or clip.length or 0)) / 1000
         self._mix_audible_until = time.monotonic() + clip_seconds
 
         # Normally MixEndedEvent (or the next track starting) brings the music

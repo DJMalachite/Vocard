@@ -23,10 +23,12 @@ SOFTWARE.
 
 from __future__ import annotations
 
+import array
 import asyncio
 import io
 import logging
 import os
+import sys
 import time
 import uuid
 import wave
@@ -45,17 +47,124 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("vocard.announcer")
 
+# Discord voice - and therefore NodeLink's audio mixer - works in 48 kHz
+# stereo signed 16-bit PCM.
+MIXER_SAMPLE_RATE = 48000
+MIXER_CHANNELS = 2
+MIXER_SAMPLE_WIDTH = 2
+
+
+def wav_format(wav: bytes) -> Optional[tuple[int, int, int, int]]:
+    """Returns (channels, sample width, frame rate, frames) for a PCM WAV, or None."""
+    try:
+        with wave.open(io.BytesIO(wav)) as handle:
+            return (
+                handle.getnchannels(),
+                handle.getsampwidth(),
+                handle.getframerate(),
+                handle.getnframes()
+            )
+    except Exception:
+        return None
+
 
 def wav_duration_ms(wav: bytes) -> Optional[int]:
     """Returns the duration of a PCM WAV in milliseconds, or None."""
-    try:
-        with wave.open(io.BytesIO(wav)) as handle:
-            frames, rate = handle.getnframes(), handle.getframerate()
-        if not frames or not rate:
-            return None
-        return int(frames / rate * 1000)
-    except Exception:
+    fmt = wav_format(wav)
+    if not fmt:
         return None
+
+    _, _, rate, frames = fmt
+    if not frames or not rate:
+        return None
+    return int(frames / rate * 1000)
+
+
+def _read_samples(wav: bytes, frames: int) -> array.array:
+    """Reads a 16-bit WAV's frames as a flat array of native-endian samples."""
+    with wave.open(io.BytesIO(wav)) as handle:
+        raw = handle.readframes(frames)
+
+    samples = array.array("h")
+    samples.frombytes(raw)
+    # WAV data is little-endian; array("h") is native.
+    if sys.byteorder == "big":
+        samples.byteswap()
+    return samples
+
+
+def to_mixer_pcm(wav: bytes) -> bytes:
+    """Re-renders a PCM WAV as 48 kHz stereo 16-bit.
+
+    NodeLink's mixer never converts sample formats. `AudioMixer.mixBuffers`
+    adds each layer onto the main track sample by sample, and `readLayerChunks`
+    reads 3840 bytes per 20ms frame - both of which assume the layer is already
+    48 kHz stereo s16. Piper synthesises at whatever rate the voice model uses
+    (22050 Hz mono for the medium voices), so passing its output straight
+    through lines the clip up against the wrong samples and it comes out as
+    noise rather than speech.
+
+    Converting here keeps the mixer's assumption true whichever voice is
+    configured, and leaves an already-correct clip untouched.
+    """
+    fmt = wav_format(wav)
+    if not fmt:
+        logger.warning("Piper did not return a readable PCM WAV; sending the clip through unconverted.")
+        return wav
+
+    channels, width, rate, frames = fmt
+    if width != MIXER_SAMPLE_WIDTH:
+        logger.warning(
+            f"Piper returned {width * 8}-bit audio, which cannot be converted for the mixer; "
+            "sending the clip through unconverted."
+        )
+        return wav
+
+    if (channels, rate) == (MIXER_CHANNELS, MIXER_SAMPLE_RATE):
+        return wav
+
+    if not frames:
+        return wav
+
+    logger.debug(f"Converting announcement clip from {rate}Hz/{channels}ch to {MIXER_SAMPLE_RATE}Hz/{MIXER_CHANNELS}ch.")
+    samples = _read_samples(wav, frames)
+
+    # Collapse to a single channel first. Piper is mono, and averaging keeps a
+    # multi-channel voice centred instead of dropping half of it.
+    if channels > 1:
+        mono = array.array("h", bytes(2 * frames))
+        for i in range(frames):
+            base = i * channels
+            mono[i] = sum(samples[base:base + channels]) // channels
+        samples = mono
+
+    # Linear interpolation is plenty for speech, and this runs off the hot
+    # path - the transition worker generates the clip well before it is needed.
+    out_frames = int(frames * MIXER_SAMPLE_RATE / rate)
+    out = array.array("h", bytes(2 * MIXER_CHANNELS * out_frames))
+    step = rate / MIXER_SAMPLE_RATE
+    last = frames - 1
+
+    for i in range(out_frames):
+        pos = i * step
+        left = int(pos)
+        start = samples[left]
+        end = samples[left + 1] if left < last else start
+        value = int(start + (end - start) * (pos - left))
+        out[2 * i] = value
+        out[2 * i + 1] = value
+
+    if sys.byteorder == "big":
+        out.byteswap()
+
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as handle:
+        handle.setnchannels(MIXER_CHANNELS)
+        handle.setsampwidth(MIXER_SAMPLE_WIDTH)
+        handle.setframerate(MIXER_SAMPLE_RATE)
+        handle.writeframes(out.tobytes())
+
+    return buffer.getvalue()
 
 
 class AnnounceServer:
@@ -331,6 +440,11 @@ class Announcer:
             wav = await self._piper.synthesize(text)
             if not wav:
                 return None
+
+            logger.debug(f"Piper returned {len(wav)} bytes, format {wav_format(wav)}.")
+            # Conversion is pure CPU work on a few hundred KB, so keep it off
+            # the event loop.
+            wav = await asyncio.to_thread(to_mixer_pcm, wav)
 
             url = self._server.put(wav)
             results = await player.node.get_tracks(url, requester=player.guild.me)
