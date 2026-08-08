@@ -89,6 +89,7 @@ class SpotifyGenreClient:
         if not self.is_configured:
             return ""
 
+        title = getattr(track, "title", "?")
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
                 token = await self._get_token(session)
@@ -97,17 +98,33 @@ class SpotifyGenreClient:
 
                 artist_id = await self._resolve_artist_id(session, token, track)
                 if not artist_id:
+                    logger.debug(
+                        f"No Spotify artist matched '{title}' by '{getattr(track, 'author', '?')}', "
+                        "so @@track_genre@@ is empty."
+                    )
                     return ""
 
-                if cached := self._cache_get(artist_id):
+                # An artist with no genres caches as "", which is a real
+                # answer - distinguish it from a miss or the lookup repeats on
+                # every announcement.
+                cached = self._cache_get(artist_id)
+                if cached is not None:
                     return cached
 
                 genres = await self._fetch_artist_genres(session, token, artist_id)
                 self._cache_put(artist_id, genres)
+
+                if genres:
+                    logger.debug(f"Spotify genres for '{title}': {genres}.")
+                else:
+                    logger.debug(
+                        f"Spotify returned an empty genre list for artist {artist_id} ('{title}'), "
+                        "so @@track_genre@@ is empty. The Web API omits genres for many artists."
+                    )
                 return genres
 
         except Exception as e:
-            logger.debug(f"Genre lookup failed for '{getattr(track, 'title', '?')}': {e}")
+            logger.debug(f"Genre lookup failed for '{title}': {e}")
             return ""
 
     async def _get_token(self, session: aiohttp.ClientSession) -> Optional[str]:
@@ -145,6 +162,10 @@ class SpotifyGenreClient:
         if track.source == "spotify" and track.identifier:
             async with session.get(f"{API_BASE}/tracks/{track.identifier}", headers=headers) as resp:
                 if resp.status != 200:
+                    logger.debug(
+                        f"Spotify track lookup for {track.identifier} returned status {resp.status}: "
+                        f"{(await resp.text())[:200]}"
+                    )
                     return None
                 data = await resp.json()
             return self._first_artist_id(data)
@@ -152,6 +173,10 @@ class SpotifyGenreClient:
         query = quote(f'track:"{self._clean_title(track.title)}" artist:"{track.author}"')
         async with session.get(f"{API_BASE}/search?q={query}&type=track&limit=1", headers=headers) as resp:
             if resp.status != 200:
+                logger.debug(
+                    f"Spotify search for '{track.title}' returned status {resp.status}: "
+                    f"{(await resp.text())[:200]}"
+                )
                 return None
             data = await resp.json()
 
@@ -162,6 +187,10 @@ class SpotifyGenreClient:
         headers = {"Authorization": f"Bearer {token}"}
         async with session.get(f"{API_BASE}/artists/{artist_id}", headers=headers) as resp:
             if resp.status != 200:
+                logger.debug(
+                    f"Spotify artist lookup for {artist_id} returned status {resp.status}: "
+                    f"{(await resp.text())[:200]}"
+                )
                 return ""
             data = await resp.json()
 
@@ -177,6 +206,7 @@ class SpotifyGenreClient:
         return " ".join(_TITLE_NOISE.sub("", title or "").split()).strip(" -–—")
 
     def _cache_get(self, artist_id: str) -> Optional[str]:
+        """Returns the cached genres, or None on a miss. "" is a real hit."""
         entry = self._artist_cache.get(artist_id)
         if not entry:
             return None
