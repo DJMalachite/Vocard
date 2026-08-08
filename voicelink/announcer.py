@@ -384,6 +384,7 @@ class AIClient:
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(self._url, json=body, headers=headers) as resp:
+                logger.debug(f"AI generation requested with body {body}")
                 if resp.status != 200:
                     logger.warning(f"AI endpoint returned status {resp.status} for announcement request.")
                     return None
