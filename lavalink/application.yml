@@ -46,8 +46,8 @@ plugins:
     sources:
       spotify: true
     spotify:
-      # Anonymous tokens from the spotify-tokener container - no Spotify
-      # client id/secret needed.
+      clientId: bf195c08f695403dbe5f247771b28adb
+      clientSecret: c7f7267209f94941b6f1c3cd6730b8ae
       customTokenEndpoint: "http://spotify-tokener:49152/api/token"
       countryCode: "US"
       playlistLoadLimit: 6

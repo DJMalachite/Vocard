@@ -172,16 +172,16 @@ class AnnounceServer:
 
     async def _sweep(self) -> None:
         while True:
-            await asyncio.sleep(60)
+            await asyncio.sleep(100)
             cutoff = time.time() - self._ttl
             for token in [t for t, (_, created) in self._store.items() if created < cutoff]:
                 self._store.pop(token, None)
-
+            logger.info(f"Announce server sweep complete, {len(self._store)} clips remain in memory.")
 
 class PiperClient:
     """Minimal client for the piper-tts HTTP server: POST JSON to /synthesize, receive WAV bytes."""
 
-    def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 10, options: Optional[dict] = None):
+    def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 60, options: Optional[dict] = None):
         url = url.rstrip("/")
         if not url.endswith("/synthesize"):
             url += "/synthesize"
@@ -199,6 +199,7 @@ class PiperClient:
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(self._url, json=payload) as resp:
+                logger.debug(f"Piper synthesis requested with payload {payload}, got status {resp.status}.")
                 if resp.status != 200:
                     logger.warning(f"Piper returned status {resp.status} for synthesis request.")
                     return None
