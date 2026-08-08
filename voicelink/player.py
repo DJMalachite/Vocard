@@ -1347,15 +1347,21 @@ class Player(VoiceProtocol):
         clip_seconds = max(0, (clip.end_time or clip.length or 0)) / 1000
         self._mix_audible_until = time.monotonic() + clip_seconds
 
-        # Normally MixEndedEvent (or the next track starting) brings the music
-        # back; this is the failsafe for when neither arrives. Keep it tight,
-        # it is the difference between a smooth segue and a late jump.
+        if hold_until_next_track:
+            # The duck is meant to outlive the clip so the next song fades in
+            # underneath it, so only step in if that song never arrives.
+            delay, reason = clip_seconds + ramp_seconds + 8, "failsafe"
+        else:
+            # Nothing else is coming to lift the duck: no next track is due,
+            # which leaves MixEnded as the only other trigger and the node does
+            # not reliably send it. We generated the clip, so we already know
+            # when it stops being audible - the mixer drains a layer in real
+            # time - and can restore on our own clock. MixEnded, if it does
+            # turn up, then finds the volume already back and does nothing.
+            delay, reason = clip_seconds, "clip finished"
+
         self._bot.loop.create_task(
-            self._restore_volume_after(
-                clip_seconds + ramp_seconds + 8,
-                ramp_seconds=ramp_seconds,
-                reason="failsafe"
-            )
+            self._restore_volume_after(delay, ramp_seconds=ramp_seconds, reason=reason)
         )
         return True
 
