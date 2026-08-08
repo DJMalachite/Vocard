@@ -337,7 +337,7 @@ class PiperClient:
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(self._url, json=payload) as resp:
-                logger.debug(f"Piper synthesis requested with payload {payload}, got status {resp.status}.")
+                logger.info(f"Piper synthesis requested with payload {payload}, got status {resp.status}.")
                 if resp.status != 200:
                     logger.warning(f"Piper returned status {resp.status} for synthesis request.")
                     return None
@@ -384,7 +384,7 @@ class AIClient:
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(self._url, json=body, headers=headers) as resp:
-                logger.debug(f"AI generation requested with body {body}")
+                logger.info(f"AI generation requested with body {body}")
                 if resp.status != 200:
                     logger.warning(f"AI endpoint returned status {resp.status} for announcement request.")
                     return None
