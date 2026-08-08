@@ -436,7 +436,8 @@ class Player(VoiceProtocol):
                 self._bot.loop.create_task(
                     self._restore_volume_after(
                         max(0.0, self._mix_audible_until - time.monotonic()),
-                        ramp_seconds=self._duck_fade_seconds
+                        ramp_seconds=self._duck_fade_seconds,
+                        reason="announcement finished"
                     )
                 )
 
@@ -1350,16 +1351,33 @@ class Player(VoiceProtocol):
         # back; this is the failsafe for when neither arrives. Keep it tight,
         # it is the difference between a smooth segue and a late jump.
         self._bot.loop.create_task(
-            self._restore_volume_after(clip_seconds + ramp_seconds + 8, ramp_seconds=ramp_seconds)
+            self._restore_volume_after(
+                clip_seconds + ramp_seconds + 8,
+                ramp_seconds=ramp_seconds,
+                reason="failsafe"
+            )
         )
         return True
 
-    async def _restore_volume_after(self, seconds: float, ramp_seconds: float = 0) -> None:
+    async def _restore_volume_after(
+        self,
+        seconds: float,
+        ramp_seconds: float = 0,
+        *,
+        reason: str = "failsafe"
+    ) -> None:
+        """Restores the volume after `seconds`, if nothing else got there first.
+
+        Both the MixEnded handler and the failsafe timer come through here, so
+        `reason` records which one actually brought the music back - otherwise
+        a healthy announcement is indistinguishable in the logs from one that
+        needed rescuing.
+        """
         try:
             await asyncio.sleep(seconds)
             if self._fade_active:
                 self._logger.debug(
-                    f"Player in {self.guild.name}({self.guild.id}) restoring volume from the announcement failsafe."
+                    f"Player in {self.guild.name}({self.guild.id}) restoring volume ({reason})."
                 )
             await self._restore_volume(ramp_seconds=ramp_seconds)
         except asyncio.CancelledError:
