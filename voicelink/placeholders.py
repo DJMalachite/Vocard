@@ -24,6 +24,7 @@ SOFTWARE.
 from __future__ import annotations
 
 import re
+import time
 import discord
 
 from discord.ext import commands
@@ -66,6 +67,13 @@ class PlayerPlaceholder:
             "track_source_name": self.track_source_name,
             "track_source_emoji": self.track_source_emoji,
             "queue_length": self.queue_length,
+            "queue_upcoming": self.queue_upcoming,
+            "recent_tracks": self.recent_tracks,
+            "now_playing_name": self.now_playing_name,
+            "now_playing_author": self.now_playing_author,
+            "listener_count": self.listener_count,
+            "listener_names": self.listener_names,
+            "session_duration": self.session_duration,
             "volume": self.volume,
             "dj": self.dj,
             "loop_mode": self.loop_mode,
@@ -139,7 +147,72 @@ class PlayerPlaceholder:
 
     def queue_length(self) -> str:
         return str(self.player.queue.count) if self.player else "0"
-    
+
+    def _lookahead(self) -> int:
+        """How many tracks the queue-context placeholders list."""
+        return max(0, Config().announce_settings.get("queue_lookahead", 3))
+
+    def _format_tracks(self, tracks: List[Track]) -> str:
+        return ", ".join(f"{track.title} by {track.author}" for track in tracks)
+
+    def queue_upcoming(self) -> str:
+        """The next few tracks after the one this render is about.
+
+        The subject track is dropped because Queue.tracks() and Queue.peek()
+        both start at the same index, so when the announcer renders text for
+        the track it has just peeked, an unfiltered list would open with that
+        very track. In a controller embed the subject is the playing track,
+        which sits behind the queue position and is not in tracks() anyway, so
+        the filter costs nothing there.
+        """
+        if not self.player:
+            return ""
+
+        current = self.get_current()
+        upcoming = [track for track in self.player.queue.tracks() if track is not current]
+        return self._format_tracks(upcoming[:self._lookahead()])
+
+    def recent_tracks(self) -> str:
+        """Already-played tracks, most recent first."""
+        if not self.player or not (depth := self._lookahead()):
+            return ""
+
+        return self._format_tracks(self.player.queue.history()[-depth:][::-1])
+
+    def now_playing_name(self) -> str:
+        """The track actually playing.
+
+        Not the same as @@track_name@@ in an announcement, where the subject is
+        the track about to start - which is what makes "that was X, here comes
+        Y" possible.
+        """
+        track = self.player.current if self.player else None
+        return track.title if track else ""
+
+    def now_playing_author(self) -> str:
+        track = self.player.current if self.player else None
+        return track.author if track else ""
+
+    def _listeners(self) -> List[discord.Member]:
+        if not self.player or not self.player.channel:
+            return []
+
+        return [member for member in self.player.channel.members if not member.bot]
+
+    def listener_count(self) -> str:
+        return str(len(self._listeners()))
+
+    def listener_names(self) -> str:
+        # Capped so a busy voice channel cannot crowd out the rest of a prompt.
+        return ", ".join(member.display_name for member in self._listeners()[:10])
+
+    def session_duration(self) -> str:
+        """How long the player has been in the voice channel."""
+        if not self.player:
+            return ""
+
+        return format_ms((time.time() - self.player.joinTime) * 1000)
+
     def dj(self) -> str:
         if not self.player:
             return self.bot.user.mention

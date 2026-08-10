@@ -26,7 +26,7 @@ from __future__ import annotations
 import time, logging, asyncio
 
 from math import ceil
-from random import shuffle, choice
+from random import shuffle, choice, randint
 from typing import Any, Dict, List, Optional, Union, Tuple, TYPE_CHECKING
 
 from discord import (
@@ -163,6 +163,11 @@ class Player(VoiceProtocol):
         self._raw_volume: int = self.settings.get('volume', 100)
         self._songs_since_announce: int = 0
         self._last_announce_ts: float = 0.0
+        # How many songs and seconds to wait before the next announcement.
+        # Drawn from the guild's configured ranges after every announcement;
+        # the sentinels mean "not rolled yet, fall back to the config".
+        self._next_announce_target: int = 0
+        self._next_cooldown_seconds: float = -1.0
         self._filters: Filters = Filters()
         self._paused: bool = False
         self._is_connected: bool = False
@@ -1209,16 +1214,44 @@ class Player(VoiceProtocol):
             return True
 
         # _songs_since_announce counts real tracks started since the last
-        # announcement, including the announced one, so frequency 3 means
+        # announcement, including the announced one, so a target of 3 means
         # "announce, two quiet tracks, announce".
-        if self._songs_since_announce < max(1, config.get("frequency", 1)):
+        target = self._next_announce_target or max(1, config.get("frequency", 1))
+        if self._songs_since_announce < target:
             return False
 
-        cooldown = max(0, config.get("cooldown", 0)) * 60
+        cooldown = self._next_cooldown_seconds
+        if cooldown < 0:
+            cooldown = max(0, config.get("cooldown", 0)) * 60
         if cooldown and (time.time() - self._last_announce_ts) < cooldown:
             return False
 
         return True
+
+    def _roll_announce_schedule(self) -> None:
+        """Draws the song gap and cooldown for the next announcement.
+
+        Guilds that set only a minimum get high == low, so the draw returns
+        that exact value and the cadence stays fixed.
+        """
+        config = self._announce_config
+
+        low = max(1, config.get("frequency", 1))
+        high = max(low, config.get("frequency_max", low))
+        self._next_announce_target = randint(low, high)
+
+        low_cooldown = max(0, config.get("cooldown", 0))
+        high_cooldown = max(low_cooldown, config.get("cooldown_max", low_cooldown))
+        self._next_cooldown_seconds = randint(low_cooldown, high_cooldown) * 60
+
+    def reset_announce_schedule(self) -> None:
+        """Forgets the rolled gap so the next check re-reads the guild config.
+
+        Called when the settings change under a live player, which would
+        otherwise keep pacing itself by a range the guild no longer uses.
+        """
+        self._next_announce_target = 0
+        self._next_cooldown_seconds = -1.0
 
     def _commit_announcement(self, *, announced_track_started: bool = False) -> None:
         """Records that an announcement is playing, resetting frequency state.
@@ -1227,9 +1260,15 @@ class Player(VoiceProtocol):
         already playing - an announcement over its intro - TrackStart has
         counted it, and zeroing here would count it a second time and swallow
         the next announcement.
+
+        This is also the only place the next gap is drawn. _announcement_due()
+        is asked the same question several times per cycle - the prepare gate,
+        the fire gate and the do_next fallback - and has to answer identically
+        every time, so it can only ever read the roll, never make one.
         """
         self._songs_since_announce = 1 if announced_track_started else 0
         self._last_announce_ts = time.time()
+        self._roll_announce_schedule()
 
     def _transition_config(self) -> dict:
         return Config().announce_settings.get("transition", {})
@@ -1381,6 +1420,24 @@ class Player(VoiceProtocol):
             duck_to,
             ramp_seconds=fade_seconds,
             hold_until_next_track=True
+        )
+
+    async def announce_now(self, clip: Track) -> bool:
+        """Plays an announcement clip over the music straight away.
+
+        Used by the test command, so unlike the scheduled path it does not hold
+        the duck afterwards - the song it interrupted is still playing and
+        should come straight back up. Returns False when the node has no mixer,
+        rather than interrupting the song to speak between tracks.
+        """
+        if not self._overlay_available():
+            return False
+
+        return await self._play_overlay(
+            clip,
+            self._duck_to,
+            ramp_seconds=self._duck_fade_seconds,
+            hold_until_next_track=False
         )
 
     def _overlay_available(self) -> bool:

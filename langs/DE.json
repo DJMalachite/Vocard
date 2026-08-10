@@ -127,7 +127,10 @@
             "resetDone": "`{0}` wurde auf die Standardwerte des Servers zurückgesetzt.",
             "resetNotFound": "Ungültiger Einstellungsname. Bitte verwende eine der folgenden Einstellungen: {0}",
             "announceNotConfigured": "TTS-Ansagen wurden vom Bot-Besitzer nicht konfiguriert.",
-            "announceUpdated": "TTS-Ansage-Einstellungen aktualisiert: `{0}`."
+            "announceUpdated": "TTS-Ansage-Einstellungen aktualisiert: `{0}`.",
+            "announcePreview": "Vorschau der Ansage:\n```{0}```",
+            "announceSpoken": "Die Ansage wird jetzt abgespielt.",
+            "announceTestFailed": "Die Ansage konnte nicht erstellt werden. Prüfe die Bot-Logs."
         },
         "menu": "Servereinstellungen | {0}",
         "basic": {

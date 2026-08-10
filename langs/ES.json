@@ -127,7 +127,10 @@
             "resetDone": "Reset `{0}` to server defaults.",
             "resetNotFound": "Nombre de opción inválido. Por favor, use una de las siguientes opciones: {0}",
             "announceNotConfigured": "Los anuncios TTS no han sido configurados por el propietario del bot.",
-            "announceUpdated": "Configuración de anuncios TTS actualizada: `{0}`."
+            "announceUpdated": "Configuración de anuncios TTS actualizada: `{0}`.",
+            "announcePreview": "Vista previa del anuncio:\n```{0}```",
+            "announceSpoken": "Reproduciendo ese anuncio ahora.",
+            "announceTestFailed": "No se pudo generar el anuncio. Revisa los registros del bot."
         },
         "menu": "Configuración del servidor | {0}",
         "basic": {

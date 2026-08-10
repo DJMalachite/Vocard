@@ -127,7 +127,10 @@
             "resetDone": "`{0}` zostało zresetowane na domyślne ustawienia serwera.",
             "resetNotFound": "Nieprawidłowa nazwa ustawienia. Proszę użyć jednej z następujących opcji: {0}",
             "announceNotConfigured": "Ogłoszenia TTS nie zostały skonfigurowane przez właściciela bota.",
-            "announceUpdated": "Zaktualizowano ustawienia ogłoszeń TTS: `{0}`."
+            "announceUpdated": "Zaktualizowano ustawienia ogłoszeń TTS: `{0}`.",
+            "announcePreview": "Podgląd ogłoszenia:\n```{0}```",
+            "announceSpoken": "Odtwarzanie tego ogłoszenia teraz.",
+            "announceTestFailed": "Nie udało się wygenerować ogłoszenia. Sprawdź logi bota."
         },
         "menu": "Ustawnienia serwera | {0}",
         "basic": {

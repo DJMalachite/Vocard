@@ -127,7 +127,10 @@
             "resetDone": "Reset `{0}` to server defaults.",
             "resetNotFound": "Tên cài đặt không hợp lệ. Vui lòng sử dụng một trong các tùy chọn sau: {0}",
             "announceNotConfigured": "Thông báo TTS chưa được chủ bot cấu hình.",
-            "announceUpdated": "Đã cập nhật cài đặt thông báo TTS: `{0}`."
+            "announceUpdated": "Đã cập nhật cài đặt thông báo TTS: `{0}`.",
+            "announcePreview": "Xem trước thông báo:\n```{0}```",
+            "announceSpoken": "Đang phát thông báo đó ngay bây giờ.",
+            "announceTestFailed": "Không thể tạo thông báo. Hãy kiểm tra nhật ký của bot."
         },
         "menu": "Cài Đặt Máy Chủ | {0}",
         "basic": {

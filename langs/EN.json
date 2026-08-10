@@ -127,7 +127,10 @@
             "resetDone": "Reset `{0}` to server defaults.",
             "resetNotFound": "Invalid setting name. Please use one of the following: {0}",
             "announceNotConfigured": "TTS announcements are not configured by the bot owner.",
-            "announceUpdated": "Updated TTS announcement settings: `{0}`."
+            "announceUpdated": "Updated TTS announcement settings: `{0}`.",
+            "announcePreview": "Announcement preview:\n```{0}```",
+            "announceSpoken": "Playing that announcement now.",
+            "announceTestFailed": "Could not produce an announcement. Check the bot logs."
         },
         "menu": "Server Settings | {0}",
         "basic": {

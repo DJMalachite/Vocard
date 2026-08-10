@@ -83,6 +83,7 @@
         "default_template": "Up next: @@track_name@@ by @@track_author@@",
         "default_ai_prompt": "In one short sentence of at most 25 words, announce the next song: @@track_name@@ by @@track_author@@, requested by @@track_requester_name@@. Reply with only the announcement text.",
         "max_text_length": 300,
+        "queue_lookahead": 3,
         "timeouts": {
             "ai": 10,
             "piper": 10,

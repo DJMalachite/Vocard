@@ -127,7 +127,10 @@
             "resetDone": "`{0}`をサーバーのデフォルトにリセットしました。",
             "resetNotFound": "無効な設定名です。次のいずれかを使用してください: {0}",
             "announceNotConfigured": "TTSアナウンスはボットのオーナーによって設定されていません。",
-            "announceUpdated": "TTSアナウンス設定を更新しました: `{0}`"
+            "announceUpdated": "TTSアナウンス設定を更新しました: `{0}`",
+            "announcePreview": "アナウンスのプレビュー:\n```{0}```",
+            "announceSpoken": "そのアナウンスを今すぐ再生します。",
+            "announceTestFailed": "アナウンスを生成できませんでした。ボットのログを確認してください。"
         },
         "menu": "サーバー設定| {0}",
         "basic": {

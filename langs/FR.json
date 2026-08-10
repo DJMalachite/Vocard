@@ -127,7 +127,10 @@
             "resetDone": "`{0}` a été réinitialisé aux paramètres par défaut du serveur.",
             "resetNotFound": "Nom d'option invalide. Veuillez utiliser une des options suivantes: {0}",
             "announceNotConfigured": "Les annonces TTS n'ont pas été configurées par le propriétaire du bot.",
-            "announceUpdated": "Paramètres d'annonces TTS mis à jour : `{0}`."
+            "announceUpdated": "Paramètres d'annonces TTS mis à jour : `{0}`.",
+            "announcePreview": "Aperçu de l'annonce :\n```{0}```",
+            "announceSpoken": "Lecture de cette annonce en cours.",
+            "announceTestFailed": "Impossible de générer l'annonce. Consultez les journaux du bot."
         },
         "menu": "Paramètres du serveur | {0}",
         "basic": {

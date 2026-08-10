@@ -83,12 +83,14 @@ downloaded automatically on first use.
     "default_template": "Up next: @@track_name@@ by @@track_author@@",
     "default_ai_prompt": "You are an energetic radio DJ. In one short sentence of at most 25 words, announce the next song: @@track_name@@ by @@track_author@@, requested by @@track_requester_name@@. Reply with only the announcement text.",
     "max_text_length": 300,
+    "queue_lookahead": 3,
     "timeouts": { "ai": 10, "piper": 10 }
 }
 ```
 
 - `enable` is the **global master switch**. When `false`, the announce server never starts
   and guilds cannot use the feature.
+- `queue_lookahead` — how many entries `@@queue_upcoming@@` and `@@recent_tracks@@` list.
 - `piper.url` — where the **bot** reaches Piper. `http://localhost:5000` if the bot runs on
   the host with the port published; `http://piper:5000` if the bot runs in the same compose
   network.
@@ -131,13 +133,41 @@ Requires the **Manage Server** permission:
 /settings announce ai_prompt:Announce @@track_name@@ by @@track_author@@, a @@track_genre@@ track. One sentence.
 /settings announce temperature:1.4
 /settings announce frequency:3 cooldown:10
+/settings announce frequency:2 frequency_max:5    (vary the gap)
 /settings announce            (no options — shows the current configuration)
+/settings announcetest        (preview the next announcement's text)
+/settings announcetest speak:True                 (play it right now)
 /settings reset setting:Tts announcements
 ```
 
-Useful placeholders: `@@track_name@@`, `@@track_author@@`, `@@track_genre@@`,
-`@@track_duration@@`, `@@track_requester_name@@`, `@@track_source_name@@`,
-`@@queue_length@@`, `@@dj@@`.
+### Placeholders
+
+The announcer can use any music-controller placeholder. The ones worth knowing:
+
+| Placeholder | What it is |
+|---|---|
+| `@@track_name@@`, `@@track_author@@` | The song **being announced** — the one about to start |
+| `@@track_genre@@` | Genre from Spotify (see below) |
+| `@@track_duration@@`, `@@track_source_name@@` | Length and source of that song |
+| `@@track_requester_name@@` | Who queued it |
+| `@@now_playing_name@@`, `@@now_playing_author@@` | The song **still playing** — what the announcement talks over |
+| `@@queue_upcoming@@` | The next few songs *after* the announced one, as `Title by Artist, …` |
+| `@@recent_tracks@@` | Recently played songs, most recent first |
+| `@@queue_length@@` | How many songs remain |
+| `@@listener_count@@`, `@@listener_names@@` | Non-bot members in the voice channel (names capped at 10) |
+| `@@session_duration@@` | How long the bot has been in the channel |
+| `@@dj@@` | The DJ role or user |
+
+`@@queue_upcoming@@`, `@@recent_tracks@@`, `@@listener_names@@` and `@@session_duration@@`
+are empty strings when there is nothing to report, so guard them the same way as
+`@@track_genre@@`:
+
+```
+That was @@now_playing_name@@.{{queue_upcoming != '' ?? Coming up: @@queue_upcoming@@.}}
+```
+
+`@@queue_upcoming@@` never repeats the song being announced. How many entries it and
+`@@recent_tracks@@` list is set globally by `announce_settings.queue_lookahead` (default `3`).
 
 ### Frequency and cooldown
 
@@ -145,6 +175,19 @@ Useful placeholders: `@@track_name@@`, `@@track_author@@`, `@@track_genre@@`,
 minutes between announcements. **Both** conditions must pass, so `frequency:3 cooldown:10`
 means "every third song, but never more often than once every 10 minutes". The first song
 after the bot joins is always announced.
+
+Set `frequency_max` or `cooldown_max` above their minimums to stop the DJ sounding
+metronomic: the gap is then drawn fresh from that range after every announcement.
+`frequency:2 frequency_max:5` means "somewhere between every 2nd and every 5th song".
+Leaving a max unset keeps the old exact behaviour. Changing any of these mid-session
+takes effect immediately — the pending gap is re-drawn from the new range.
+
+### Testing without waiting
+
+`/settings announcetest` renders the announcement text for whatever is queued next and
+replies privately with it. It costs one AI call and no synthesis, which makes it the fast
+way to iterate on a prompt. Add `speak:True` to synthesise the clip and mix it over the
+music straight away — that one needs overlay mode and a mixer-capable node.
 
 ### Smooth transitions
 

@@ -461,6 +461,19 @@ class Announcer:
     async def stop(self) -> None:
         await self._server.stop()
 
+    async def render_preview(self, player: Player, track: Track, guild_cfg: dict) -> Optional[str]:
+        """Renders the announcement text without synthesising or playing it.
+
+        Lets a guild tune a template or prompt without waiting out a song, and
+        without spending a Piper call on text they are about to rewrite.
+        """
+        try:
+            text = await self._render_text(player, track, guild_cfg)
+            return " ".join(text.split())[:self._max_text_length] if text else None
+        except Exception as e:
+            logger.warning(f"TTS announcement preview failed for guild {player.guild.id}: {e}")
+            return None
+
     async def build_announcement(self, player: Player, track: Track, guild_cfg: dict) -> Optional[Track]:
         try:
             text = await self._render_text(player, track, guild_cfg)

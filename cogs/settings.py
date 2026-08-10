@@ -280,6 +280,18 @@ class Settings(commands.Cog, name="settings"):
         await MongoDBHandler.update_settings(ctx.guild.id, {"$set": {'stage_announce_template': template}})
         await send_localized_message(ctx, "voice.stageChannel.setAnnounceTemplate")
 
+    @staticmethod
+    def _format_announce_range(guild_cfg: dict, key: str, default: int) -> str:
+        """Renders a min/max announcement setting as "2" or "2-5".
+
+        Folding the range into the value keeps the status embed's format string
+        the same in every language pack.
+        """
+        low = guild_cfg.get(key, default)
+        high = guild_cfg.get(f"{key}_max")
+
+        return f"{low}-{high}" if high is not None and high > low else str(low)
+
     @settings.command(name="announce", aliases=get_aliases("announce"))
     @app_commands.describe(
         mode="Disable announcements or choose how announcement text is produced.",
@@ -288,7 +300,9 @@ class Settings(commands.Cog, name="settings"):
         persona="AI-mode character/system prompt, e.g. 'You are a calm late-night DJ.'",
         temperature="AI creativity from 0.0 (predictable) to 2.0 (wild).",
         frequency="Announce every Nth song. 1 announces every song.",
-        cooldown="Minimum minutes between announcements. 0 disables the cooldown."
+        frequency_max="Upper bound on the song gap. Set it above frequency to vary the cadence.",
+        cooldown="Minimum minutes between announcements. 0 disables the cooldown.",
+        cooldown_max="Upper bound on the cooldown. Set it above cooldown to vary the wait."
     )
     @app_commands.choices(mode=[
         app_commands.Choice(name="Disabled", value="off"),
@@ -306,7 +320,9 @@ class Settings(commands.Cog, name="settings"):
         persona: str = None,
         temperature: commands.Range[float, 0.0, 2.0] = None,
         frequency: commands.Range[int, 1, 50] = None,
-        cooldown: commands.Range[int, 0, 120] = None
+        frequency_max: commands.Range[int, 1, 50] = None,
+        cooldown: commands.Range[int, 0, 120] = None,
+        cooldown_max: commands.Range[int, 0, 120] = None
     ):
         "Configure TTS voice announcements played before each song."
         announce_config = voicelink.Config().announce_settings
@@ -328,8 +344,12 @@ class Settings(commands.Cog, name="settings"):
             updates["tts_announce.ai_temperature"] = float(temperature)
         if frequency is not None:
             updates["tts_announce.frequency"] = int(frequency)
+        if frequency_max is not None:
+            updates["tts_announce.frequency_max"] = int(frequency_max)
         if cooldown is not None:
             updates["tts_announce.cooldown"] = int(cooldown)
+        if cooldown_max is not None:
+            updates["tts_announce.cooldown_max"] = int(cooldown_max)
 
         if not updates:
             settings = await MongoDBHandler.get_settings(ctx.guild.id)
@@ -339,8 +359,8 @@ class Settings(commands.Cog, name="settings"):
             embed.description = texts[1].format(
                 await LangHandler.get_lang(ctx.guild.id, "common.status.enabled" if guild_cfg.get("enable") else "common.status.disabled"),
                 guild_cfg.get("mode", "simple"),
-                guild_cfg.get("frequency", 1),
-                guild_cfg.get("cooldown", 0),
+                self._format_announce_range(guild_cfg, "frequency", 1),
+                self._format_announce_range(guild_cfg, "cooldown", 0),
                 guild_cfg.get("ai_temperature", announce_config.get("ai", {}).get("temperature", "default")),
                 guild_cfg.get("template") or announce_config.get("default_template", ""),
                 guild_cfg.get("ai_persona") or announce_config.get("default_ai_persona", ""),
@@ -353,7 +373,44 @@ class Settings(commands.Cog, name="settings"):
         if player:
             fresh = await MongoDBHandler.get_settings(ctx.guild.id)
             player.settings["tts_announce"] = fresh.get("tts_announce", {})
+            # The gap to the next announcement was drawn from the old ranges.
+            player.reset_announce_schedule()
         await send_localized_message(ctx, "settings.actions.announceUpdated", ", ".join(key.split(".", 1)[1] for key in updates))
+
+    @settings.command(name="announcetest", aliases=get_aliases("announcetest"))
+    @app_commands.describe(speak="Play the announcement out loud now instead of only showing its text.")
+    @commands.has_permissions(manage_guild=True)
+    @commands.dynamic_cooldown(cooldown_check, commands.BucketType.guild)
+    async def announcetest(self, ctx: commands.Context, speak: bool = False):
+        "Preview the next TTS announcement without waiting for it."
+        if not voicelink.Config().announce_settings.get("enable"):
+            return await send_localized_message(ctx, "settings.actions.announceNotConfigured", ephemeral=True)
+
+        announcer = getattr(self.bot, "announcer", None)
+        player: voicelink.Player = ctx.guild.voice_client
+        if not announcer or not player or not player.current:
+            return await send_localized_message(ctx, "player.errors.noTrackPlaying", ephemeral=True)
+
+        # Whatever a real transition would announce: the track queued next,
+        # falling back to the current one when nothing follows it.
+        track = player.queue.peek() or player.current
+        guild_cfg = player.settings.get("tts_announce") or {}
+
+        # Generation talks to an AI endpoint and then to Piper, which together
+        # run well past Discord's three-second reply window.
+        await ctx.defer(ephemeral=True)
+
+        if not speak:
+            text = await announcer.render_preview(player, track, guild_cfg)
+            if not text:
+                return await send_localized_message(ctx, "settings.actions.announceTestFailed", ephemeral=True)
+            return await send_localized_message(ctx, "settings.actions.announcePreview", text, ephemeral=True)
+
+        clip = await announcer.build_announcement(player, track, guild_cfg)
+        if not clip or not await player.announce_now(clip):
+            return await send_localized_message(ctx, "settings.actions.announceTestFailed", ephemeral=True)
+
+        await send_localized_message(ctx, "settings.actions.announceSpoken", ephemeral=True)
 
     @settings.command(name="setupchannel", aliases=get_aliases("setupchannel"))
     @app_commands.describe(

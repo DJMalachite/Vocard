@@ -127,7 +127,10 @@
             "resetDone": "`{0}` 已重置为服务器默认值。",
             "resetNotFound": "无效的设置名称。请使用以下之一: {0}",
             "announceNotConfigured": "机器人所有者尚未配置 TTS 语音播报。",
-            "announceUpdated": "已更新 TTS 语音播报设置：`{0}`。"
+            "announceUpdated": "已更新 TTS 语音播报设置：`{0}`。",
+            "announcePreview": "语音播报预览：\n```{0}```",
+            "announceSpoken": "正在播放该语音播报。",
+            "announceTestFailed": "无法生成语音播报。请检查机器人日志。"
         },
         "menu": "服务器设置 | {0}",
         "basic": {

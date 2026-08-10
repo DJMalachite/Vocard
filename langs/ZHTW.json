@@ -127,7 +127,10 @@
             "resetDone": "`{0}` 已重置為伺服器預設值。",
             "resetNotFound": "無效的設定名稱。請使用以下之一: {0}",
             "announceNotConfigured": "機器人擁有者尚未設定 TTS 語音播報。",
-            "announceUpdated": "已更新 TTS 語音播報設定：`{0}`。"
+            "announceUpdated": "已更新 TTS 語音播報設定：`{0}`。",
+            "announcePreview": "語音播報預覽：\n```{0}```",
+            "announceSpoken": "正在播放該語音播報。",
+            "announceTestFailed": "無法產生語音播報。請檢查機器人日誌。"
         },
         "menu": "伺服器設定 | {0}",
         "basic": {
