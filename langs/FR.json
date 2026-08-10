@@ -130,7 +130,9 @@
             "announceUpdated": "Paramètres d'annonces TTS mis à jour : `{0}`.",
             "announcePreview": "Aperçu de l'annonce :\n```{0}```",
             "announceSpoken": "Lecture de cette annonce en cours.",
-            "announceTestFailed": "Impossible de générer l'annonce. Consultez les journaux du bot."
+            "announceTestFailed": "Impossible de générer l'annonce. Consultez les journaux du bot.",
+            "piperUpdated": "Paramètres de voix Piper mis à jour : `{0}`.",
+            "piperReset": "Paramètres de voix Piper de ce serveur réinitialisés."
         },
         "menu": "Paramètres du serveur | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 Annonces TTS",
             "value": "```Statut : {0}\nMode : {1}\nToutes les : {2} musique(s)\nDélai : {3} min\nTempérature : {4}```\n**Modèle :**\n```{5}```\n**Persona IA :**\n```{6}```\n**Prompt IA :**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Voix Piper",
+            "value": "**Valeurs par défaut :**\n```{0}```\n**Ce serveur :**\n```{1}```\n**Actif ici :**\n```{2}```"
         }
     },
     "ping": {

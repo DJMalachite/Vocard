@@ -130,7 +130,9 @@
             "announceUpdated": "已更新 TTS 語音播報設定：`{0}`。",
             "announcePreview": "語音播報預覽：\n```{0}```",
             "announceSpoken": "正在播放該語音播報。",
-            "announceTestFailed": "無法產生語音播報。請檢查機器人日誌。"
+            "announceTestFailed": "無法產生語音播報。請檢查機器人日誌。",
+            "piperUpdated": "已更新 Piper 語音設定：`{0}`。",
+            "piperReset": "已重設本伺服器的 Piper 語音設定。"
         },
         "menu": "伺服器設定 | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 TTS 語音播報",
             "value": "```狀態: {0}\n模式: {1}\n每隔: {2} 首\n冷卻: {3} 分鐘\n溫度: {4}```\n**模板:**\n```{5}```\n**AI 人設:**\n```{6}```\n**AI 提示詞:**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Piper 語音",
+            "value": "**機器人預設：**\n```{0}```\n**本伺服器：**\n```{1}```\n**目前生效：**\n```{2}```"
         }
     },
     "ping": {

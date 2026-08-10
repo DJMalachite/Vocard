@@ -130,7 +130,9 @@
             "announceUpdated": "Updated TTS announcement settings: `{0}`.",
             "announcePreview": "Announcement preview:\n```{0}```",
             "announceSpoken": "Playing that announcement now.",
-            "announceTestFailed": "Could not produce an announcement. Check the bot logs."
+            "announceTestFailed": "Could not produce an announcement. Check the bot logs.",
+            "piperUpdated": "Updated Piper voice settings: `{0}`.",
+            "piperReset": "Reset this server's Piper voice settings."
         },
         "menu": "Server Settings | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 TTS Announcements",
             "value": "```Status: {0}\nMode: {1}\nEvery: {2} song(s)\nCooldown: {3} min\nTemperature: {4}```\n**Template:**\n```{5}```\n**AI Persona:**\n```{6}```\n**AI Prompt:**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Piper Voice",
+            "value": "**Bot defaults:**\n```{0}```\n**This server:**\n```{1}```\n**In effect here:**\n```{2}```"
         }
     },
     "ping": {

@@ -130,7 +130,9 @@
             "announceUpdated": "Configuración de anuncios TTS actualizada: `{0}`.",
             "announcePreview": "Vista previa del anuncio:\n```{0}```",
             "announceSpoken": "Reproduciendo ese anuncio ahora.",
-            "announceTestFailed": "No se pudo generar el anuncio. Revisa los registros del bot."
+            "announceTestFailed": "No se pudo generar el anuncio. Revisa los registros del bot.",
+            "piperUpdated": "Configuración de voz de Piper actualizada: `{0}`.",
+            "piperReset": "Se restableció la configuración de voz de Piper de este servidor."
         },
         "menu": "Configuración del servidor | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 Anuncios TTS",
             "value": "```Estado: {0}\nModo: {1}\nCada: {2} canción(es)\nEnfriamiento: {3} min\nTemperatura: {4}```\n**Plantilla:**\n```{5}```\n**Persona de IA:**\n```{6}```\n**Prompt de IA:**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Voz de Piper",
+            "value": "**Valores del bot:**\n```{0}```\n**Este servidor:**\n```{1}```\n**En uso aquí:**\n```{2}```"
         }
     },
     "ping": {

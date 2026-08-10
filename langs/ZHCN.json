@@ -130,7 +130,9 @@
             "announceUpdated": "已更新 TTS 语音播报设置：`{0}`。",
             "announcePreview": "语音播报预览：\n```{0}```",
             "announceSpoken": "正在播放该语音播报。",
-            "announceTestFailed": "无法生成语音播报。请检查机器人日志。"
+            "announceTestFailed": "无法生成语音播报。请检查机器人日志。",
+            "piperUpdated": "已更新 Piper 语音设置：`{0}`。",
+            "piperReset": "已重置本服务器的 Piper 语音设置。"
         },
         "menu": "服务器设置 | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 TTS 语音播报",
             "value": "```状态: {0}\n模式: {1}\n每隔: {2} 首\n冷却: {3} 分钟\n温度: {4}```\n**模板:**\n```{5}```\n**AI 人设:**\n```{6}```\n**AI 提示词:**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Piper 语音",
+            "value": "**机器人默认：**\n```{0}```\n**本服务器：**\n```{1}```\n**当前生效：**\n```{2}```"
         }
     },
     "ping": {

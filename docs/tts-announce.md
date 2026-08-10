@@ -189,6 +189,42 @@ replies privately with it. It costs one AI call and no synthesis, which makes it
 way to iterate on a prompt. Add `speak:True` to synthesise the clip and mix it over the
 music straight away — that one needs overlay mode and a mixer-capable node.
 
+### Changing the voice without a restart
+
+The `/piper` group retunes synthesis live — no restart, no file editing. Pair it with
+`/settings announcetest speak:True` to hear each change immediately.
+
+```
+/piper show                                   (defaults, this server's overrides, what's in effect)
+/piper set length_scale:1.15 noise_scale:0.3  (this server only — Manage Server)
+/piper set voice:en_GB-alba-medium
+/piper reset                                  (drop this server's overrides)
+/piper default length_scale:1.05              (bot-wide — owner only)
+```
+
+There are two layers. `/piper default` changes the bot-wide defaults for every guild; it is
+restricted to the IDs in `bot_access_user`, takes effect on the next announcement, and is
+written back into `announce_settings.piper` in `settings.json` so it survives a restart.
+`/piper set` stores an override for one server under `tts_announce.piper`, and those values
+win over the defaults key by key — a guild that sets only `length_scale` still gets the
+bot's voice and every other default.
+
+The knobs are the same ones described under `piper.options` above: `length_scale` (speed,
+higher is slower), `noise_scale` (expressiveness, lower is flatter), `length_w_scale`
+(cadence looseness) and `speaker_id` (multi-speaker models). Anything else is dropped
+before the request is built.
+
+Two caveats:
+
+- **`voice` has to exist on the Piper server.** `python -m piper.http_server` is started
+  with one `-m` model and reads from `--data-dir`; a voice that was never downloaded there
+  cannot be selected from Discord. Fetch it into the Piper volume first
+  (`python -m piper.download_voices <name>`). The numeric knobs are per-request and always
+  work.
+- **`/piper default` rewrites `settings.json`.** It goes through the same `update_json`
+  helper the version stamp uses, which re-serialises the whole file at 4-space indent, so
+  any hand-formatting in that file is reflowed.
+
 ### Smooth transitions
 
 Announcements no longer cut in abruptly. During the last seconds of a song the bot

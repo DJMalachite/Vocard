@@ -319,6 +319,11 @@ class AnnounceServer:
 class PiperClient:
     """Minimal client for the piper-tts HTTP server: POST JSON to /synthesize, receive WAV bytes."""
 
+    # The numeric synthesis knobs Piper accepts alongside the text. Anything
+    # outside this list is not forwarded, so a stray guild setting cannot
+    # corrupt the request body.
+    OPTION_KEYS: tuple = ("length_scale", "noise_scale", "length_w_scale", "speaker_id")
+
     def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 60, options: Optional[dict] = None):
         url = url.rstrip("/")
         if not url.endswith("/synthesize"):
@@ -328,12 +333,45 @@ class PiperClient:
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
         # Per-request synthesis overrides, e.g. length_scale, noise_scale,
         # length_w_scale, speaker_id.
-        self._options: dict = options or {}
+        self._options: dict = dict(options or {})
 
-    async def synthesize(self, text: str) -> Optional[bytes]:
-        payload = {**self._options, "text": text}
-        if self._voice:
-            payload["voice"] = self._voice
+    @property
+    def voice(self) -> Optional[str]:
+        return self._voice
+
+    @property
+    def options(self) -> dict:
+        """A copy, so callers cannot edit the defaults by accident."""
+        return dict(self._options)
+
+    def configure(self, voice: Optional[str] = None, options: Optional[dict] = None) -> None:
+        """Changes the bot-wide defaults without a restart.
+
+        Only the values actually supplied are touched, so a caller can change
+        the speed without having to restate the voice.
+        """
+        if voice:
+            self._voice = voice
+        if options:
+            self._options.update(options)
+
+    @classmethod
+    def filter_options(cls, source: dict) -> dict:
+        """Picks the recognised synthesis knobs out of a settings dict."""
+        return {key: value for key, value in (source or {}).items() if key in cls.OPTION_KEYS}
+
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        voice: Optional[str] = None,
+        options: Optional[dict] = None
+    ) -> Optional[bytes]:
+        # Per-call values win over the bot-wide defaults, which is what makes
+        # a guild override an override.
+        payload = {**self._options, **(options or {}), "text": text}
+        if selected := (voice or self._voice):
+            payload["voice"] = selected
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
             async with session.post(self._url, json=payload) as resp:
@@ -450,6 +488,11 @@ class Announcer:
         )
         self._max_text_length: int = settings.get("max_text_length", 300)
 
+    @property
+    def piper(self) -> PiperClient:
+        """The synthesis client, so its defaults can be retuned at runtime."""
+        return self._piper
+
     async def start(self) -> None:
         await self._server.start()
         if not self._spotify.is_configured:
@@ -481,7 +524,12 @@ class Announcer:
                 return None
             text = " ".join(text.split())[:self._max_text_length]
 
-            wav = await self._piper.synthesize(text)
+            piper_cfg = guild_cfg.get("piper") or {}
+            wav = await self._piper.synthesize(
+                text,
+                voice=piper_cfg.get("voice"),
+                options=PiperClient.filter_options(piper_cfg)
+            )
             if not wav:
                 return None
 

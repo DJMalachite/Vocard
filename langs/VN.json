@@ -130,7 +130,9 @@
             "announceUpdated": "Đã cập nhật cài đặt thông báo TTS: `{0}`.",
             "announcePreview": "Xem trước thông báo:\n```{0}```",
             "announceSpoken": "Đang phát thông báo đó ngay bây giờ.",
-            "announceTestFailed": "Không thể tạo thông báo. Hãy kiểm tra nhật ký của bot."
+            "announceTestFailed": "Không thể tạo thông báo. Hãy kiểm tra nhật ký của bot.",
+            "piperUpdated": "Đã cập nhật cài đặt giọng Piper: `{0}`.",
+            "piperReset": "Đã đặt lại cài đặt giọng Piper của máy chủ này."
         },
         "menu": "Cài Đặt Máy Chủ | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 Thông báo TTS",
             "value": "```Trạng thái: {0}\nChế độ: {1}\nMỗi: {2} bài\nThời gian chờ: {3} phút\nNhiệt độ: {4}```\n**Mẫu:**\n```{5}```\n**Nhân vật AI:**\n```{6}```\n**Prompt AI:**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Giọng Piper",
+            "value": "**Mặc định của bot:**\n```{0}```\n**Máy chủ này:**\n```{1}```\n**Đang áp dụng:**\n```{2}```"
         }
     },
     "ping": {

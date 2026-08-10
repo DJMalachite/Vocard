@@ -130,7 +130,9 @@
             "announceUpdated": "Zaktualizowano ustawienia ogłoszeń TTS: `{0}`.",
             "announcePreview": "Podgląd ogłoszenia:\n```{0}```",
             "announceSpoken": "Odtwarzanie tego ogłoszenia teraz.",
-            "announceTestFailed": "Nie udało się wygenerować ogłoszenia. Sprawdź logi bota."
+            "announceTestFailed": "Nie udało się wygenerować ogłoszenia. Sprawdź logi bota.",
+            "piperUpdated": "Zaktualizowano ustawienia głosu Piper: `{0}`.",
+            "piperReset": "Zresetowano ustawienia głosu Piper na tym serwerze."
         },
         "menu": "Ustawnienia serwera | {0}",
         "basic": {
@@ -151,6 +153,10 @@
         "tts": {
             "title": "🔊 Ogłoszenia TTS",
             "value": "```Status: {0}\nTryb: {1}\nCo: {2} utwór(y)\nOdstęp: {3} min\nTemperatura: {4}```\n**Szablon:**\n```{5}```\n**Persona AI:**\n```{6}```\n**Prompt AI:**\n```{7}```"
+        },
+        "piper": {
+            "title": "🎙️ Głos Piper",
+            "value": "**Domyślne bota:**\n```{0}```\n**Ten serwer:**\n```{1}```\n**Aktywne tutaj:**\n```{2}```"
         }
     },
     "ping": {
