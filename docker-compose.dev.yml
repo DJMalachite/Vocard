@@ -50,6 +50,13 @@ services:
       # fades send a burst of volume updates that the default per-guild limit
       # (20 requests / 5s) rejects.
       - NODELINK_RATELIMIT_ENABLED=false
+      # Cluster mode (on by default) runs players in separate worker
+      # processes. When a worker exits, NodeLink fails to clear the player
+      # entries its primary process still holds - it splits the player key
+      # the wrong way round - so every later request for those guilds answers
+      # 404 "Player not found." and playback is dead until a restart. One
+      # process handles far more guilds than this deployment has.
+      - NODELINK_CLUSTER_ENABLED=false
       # Audio mixer - required for overlay announcements.
       - NODELINK_MIX_ENABLED=true
       - NODELINK_MIX_DEFAULTVOLUME=0.8

@@ -45,6 +45,7 @@ from .exceptions import (
     NodeException,
     NodeNotAvailable,
     NoNodesAvailable,
+    PlayerNotFound,
     TrackLoadError
 )
 from .objects import Playlist, Track
@@ -294,6 +295,13 @@ class Node:
                     f"Node [{self._identifier}] rejected {method.value.upper()} {query} "
                     f"with status {resp.status}: {body}"
                 )
+
+                # A player the node has lost is worth telling apart from any
+                # other REST failure: the caller can rebuild it and retry
+                # instead of the guild being stuck on 404 forever.
+                if resp.status == 404 and "player not found" in body.lower():
+                    raise PlayerNotFound(f"The node has no player for {query}")
+
                 raise NodeException(
                     f"Getting errors from Lavalink REST api (status {resp.status})"
                 )

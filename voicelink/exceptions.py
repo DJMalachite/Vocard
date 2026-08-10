@@ -42,6 +42,14 @@ class NodeConnectionClosed(NodeException):
     pass
 
 
+class PlayerNotFound(NodeException):
+    """The node has no player for the guild the request named.
+
+    Distinct from a generic REST failure because it is recoverable: the
+    player can be rebuilt and the request retried.
+    """
+
+
 class NodeNotAvailable(VoicelinkException):
     """The node is currently unavailable."""
     pass

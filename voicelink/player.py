@@ -50,8 +50,15 @@ from .pool import Node, NodePool
 from .objects import Track, Playlist
 from .filters import Filter, Filters
 from .enums import SearchType, LoopType, RequestMethod
-from .events import VoicelinkEvent, TrackEndEvent, TrackStartEvent, TrackExceptionEvent, MixEndedEvent
-from .exceptions import VoicelinkException, FilterInvalidArgument, TrackInvalidPosition, FilterTagAlreadyInUse, DuplicateTrack
+from .events import (
+    VoicelinkEvent,
+    TrackEndEvent,
+    TrackStartEvent,
+    TrackExceptionEvent,
+    MixEndedEvent,
+    WebSocketClosedEvent
+)
+from .exceptions import VoicelinkException, FilterInvalidArgument, TrackInvalidPosition, FilterTagAlreadyInUse, DuplicateTrack, PlayerNotFound
 from .placeholders import PlayerPlaceholder
 from .queue import Queue, QUEUE_TYPES
 from .mongodb import MongoDBHandler
@@ -61,6 +68,12 @@ from .utils import format_ms, dispatch_message
 
 if TYPE_CHECKING:
     from .ipc import IPCClient
+
+# Not a Discord close code: NodeLink reports a playback worker that died,
+# taking every player it held with it, as a websocket close on each affected
+# guild. The voice connection itself is fine - only the node-side player is
+# gone - so it is handled by rebuilding rather than reconnecting.
+WORKER_FAILED_CLOSE_CODE = 5001
 
 async def connect_channel(ctx: Union[commands.Context, Interaction], channel: VoiceChannel = None):
     texts = await LangHandler.get_lang(ctx.guild.id, "voice.connection.noChannel", "voice.connection.noPermission")
@@ -155,6 +168,10 @@ class Player(VoiceProtocol):
         self._is_connected: bool = False
         self._ping: float = 0.0
         self._track_is_stuck = False
+
+        # Set while the node-side player is being rebuilt, so the requests
+        # that rebuild it cannot themselves trigger another rebuild.
+        self._recovering: bool = False
 
         self._position: int = 0
         self._last_position: int = 0
@@ -343,11 +360,113 @@ class Player(VoiceProtocol):
         
         return PlayerPlaceholder.build_embed(embed_form, self._ph)
 
+    def _player_uri(self, query: str = None) -> str:
+        return f"sessions/{self._node._session_id}/players/{self._guild.id}" + (f"?{query}" if query else "")
+
     async def send(self, method: RequestMethod, query: str = None, data: Union[Dict, str] = {}) -> Dict:
         """Sends an HTTP request to the node with the given method, query, and data."""
-        uri: str = f"sessions/{self._node._session_id}/players/{self._guild.id}" + (f"?{query}" if query else "")
-        return await self._node.send(method, query=uri, data=data)
-        
+        try:
+            return await self._node.send(method, query=self._player_uri(query), data=data)
+
+        except PlayerNotFound:
+            # Already rebuilding, or the request was the teardown itself:
+            # there is nothing useful to recover to.
+            if self._recovering or method == RequestMethod.DELETE:
+                raise
+
+            self._recovering = True
+            try:
+                if not await self._rebuild_node_player():
+                    raise
+
+                result = await self._node.send(method, query=self._player_uri(query), data=data)
+
+                # A rebuilt player starts empty. A request that carries a
+                # track has just refilled it; anything else (a volume tick, a
+                # seek) leaves it silent unless the song is put back.
+                if not (isinstance(data, dict) and "track" in data):
+                    await self._resume_after_rebuild()
+
+                return result
+            finally:
+                self._recovering = False
+
+    async def _rebuild_node_player(self) -> bool:
+        """Recreates a player the node has lost.
+
+        A node can drop a player without the connection ever going down -
+        NodeLink in cluster mode loses every player a playback worker was
+        holding when that worker exits, and the stale entry its primary
+        process keeps means each later request answers 404 "Player not found."
+        rather than creating anything. Discarding that entry and sending the
+        voice state again rebuilds the player; without this the guild stays
+        broken until the bot restarts.
+        """
+        if not self.channel or {"sessionId", "event"} != self._voice_state.keys():
+            self._logger.warning(
+                f"Node [{self._node._identifier}] lost the player for {self.guild.name}({self.guild.id}) "
+                "and there is no voice state to rebuild it from."
+            )
+            return False
+
+        self._logger.warning(
+            f"Node [{self._node._identifier}] lost the player for {self.guild.name}({self.guild.id}); "
+            "rebuilding it."
+        )
+
+        # The stale entry has to go first: while the node still holds it, it
+        # keeps answering requests with 404 instead of creating a player.
+        try:
+            await self._node.send(RequestMethod.DELETE, query=self._player_uri())
+        except Exception as e:
+            self._logger.debug(f"Discarding the lost player in {self.guild.id} failed, continuing anyway: {e}")
+
+        # The node only builds a player for a request carrying voice data, so
+        # the one we already hold is what brings it back.
+        await self._dispatch_voice_update()
+        return True
+
+    async def _recover_lost_player(self) -> None:
+        """Rebuilds a player the node told us it lost, without waiting for a request to fail."""
+        if self._recovering:
+            return
+
+        self._recovering = True
+        try:
+            if await self._rebuild_node_player():
+                await self._resume_after_rebuild()
+        except Exception as e:
+            self._logger.error(
+                f"Could not rebuild the lost player in {self.guild.name}({self.guild.id})",
+                exc_info=e
+            )
+        finally:
+            self._recovering = False
+
+    async def _resume_after_rebuild(self) -> None:
+        """Puts the current track back on a freshly rebuilt player."""
+        track, position = self._current, self.position
+        if not track:
+            return
+
+        self._logger.info(
+            f"Resuming {track.title} in {self.guild.name}({self.guild.id}) at "
+            f"{format_ms(int(position))} after rebuilding the player."
+        )
+
+        # One request for track and volume: a rebuilt player starts at 100,
+        # which is loud enough to be startling if it lands on its own first.
+        self._playback_started.clear()
+        await self._node.send(
+            RequestMethod.PATCH,
+            query=self._player_uri(),
+            data={
+                "track": {"encoded": track.track_id},
+                "position": int(position),
+                "volume": self._raw_volume
+            }
+        )
+
     async def _update_state(self, data: dict) -> None:
         """Updates the player's state based on the provided data."""
         state: dict = data.get("state")
@@ -421,6 +540,13 @@ class Player(VoiceProtocol):
         if isinstance(event, TrackExceptionEvent) and event.exception["message"] == "This content isn’t available.":
             if self._node.yt_ratelimit:
                 await self._node.yt_ratelimit.flag_active_token()
+
+        # The node lost the player itself rather than the voice connection:
+        # NodeLink reports a playback worker taking its players down with it
+        # as a synthetic close. Nothing is playing there any more, so rebuild
+        # the player and put the song back where it left off.
+        if isinstance(event, WebSocketClosedEvent) and event.payload.code == WORKER_FAILED_CLOSE_CODE:
+            self._bot.loop.create_task(self._recover_lost_player())
 
         # An overlay announcement finished. When it was talking over an outro
         # the music stays down until the next song starts, so it fades in
@@ -1324,6 +1450,20 @@ class Player(VoiceProtocol):
                 "volume": max(0.0, min(1.0, mix_volume / 100))
             }
         )
+
+        if status == 404:
+            # The player is missing, not the mixer. Leave overlay support
+            # alone - disabling it here would cost every future announcement
+            # on this node for a fault the next player request repairs.
+            self._logger.warning(
+                f"Node [{self._node._identifier}] has no player for {self.guild.name}({self.guild.id}); "
+                "dropping this announcement."
+            )
+            # Undo the duck before the rebuild, or the music comes back at
+            # announcement volume and stays there.
+            await self._restore_volume()
+            self._bot.loop.create_task(self._recover_lost_player())
+            return False
 
         if status >= 300:
             # 403 means mixing is switched off server-side; anything else on a
