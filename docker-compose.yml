@@ -50,6 +50,13 @@ services:
       # fades send a burst of volume updates that the default per-guild limit
       # (20 requests / 5s) rejects.
       - NODELINK_RATELIMIT_ENABLED=false
+      # Cluster mode (on by default) runs players in separate worker
+      # processes. When a worker exits, NodeLink fails to clear the player
+      # entries its primary process still holds - it splits the player key
+      # the wrong way round - so every later request for those guilds answers
+      # 404 "Player not found." and playback is dead until a restart. One
+      # process handles far more guilds than this deployment has.
+      - NODELINK_CLUSTER_ENABLED=false
       # Audio mixer - required for overlay announcements.
       - NODELINK_MIX_ENABLED=true
       - NODELINK_MIX_DEFAULTVOLUME=0.8
@@ -66,7 +73,6 @@ services:
       - NODELINK_SOURCES_VIMEO_ENABLED=true
       # The announcement clips are served over plain HTTP by the bot.
       - NODELINK_SOURCES_HTTP_ENABLED=true
-      - NODELINK_SOURCES_PIPERTTS_ENABLED=true
       # Spotify: your own app credentials, or leave blank to use NodeLink's
       # default anonymous token service.
       - NODELINK_SOURCES_SPOTIFY_ENABLED=true
@@ -111,7 +117,7 @@ services:
     image: python:3.12-slim
     container_name: vocard-piper
     restart: unless-stopped
-    command: sh -c "pip install --no-cache-dir piper-tts[http] && pip install piper-tts[alignment] && cd /data && python -m piper.download_voices en_US-lessac-medium  && python -m piper.http_server -m ${TTS:-} --host 0.0.0.0 --port 5000 --data-dir /data"
+    command: sh -c "pip install --no-cache-dir piper-tts[http] && pip install piper-tts[alignment] && cd /data && python -m piper.download_voices en_US-lessac-medium  && python -m piper.http_server -m en-US-Kratos-high --host 0.0.0.0 --port 5000 --data-dir /data"
     volumes:
       - /home/flameheart/CustomVocard/PiperTTS:/data
     ports:
