@@ -36,6 +36,12 @@ from voicelink import MongoDBHandler, LangHandler
 from voicelink.announcer import TTSClient
 from voicelink.utils import dispatch_message, send_localized_message
 
+# Applied by the bot to the finished clip rather than sent to the engine, so it
+# is stored and displayed alongside the engine's knobs but never forwarded.
+_LOUDNESS: str = "loudness"
+
+_LOUDNESS_HELP: str = "Boost quiet clips up to this % of full volume. 0 keeps the engine's own level."
+
 
 class Piper(commands.Cog, name="piper"):
     def __init__(self, bot) -> None:
@@ -53,12 +59,17 @@ class Piper(commands.Cog, name="piper"):
 
     @staticmethod
     def _keys(client: TTSClient) -> tuple:
-        """Keys a guild may override on this engine, in the order they are shown."""
-        return ("voice",) + client.OPTION_KEYS
+        """Keys a guild may override on this engine, in the order they are shown.
+
+        `loudness` is not one of the engine's own knobs - the bot applies it to
+        the finished clip - so it is offered whichever engine is running.
+        """
+        return ("voice",) + client.OPTION_KEYS + (_LOUDNESS,)
 
     @staticmethod
     def _collect(
         voice: str,
+        loudness: int,
         length_scale: float,
         noise_scale: float,
         length_w_scale: float,
@@ -67,6 +78,7 @@ class Piper(commands.Cog, name="piper"):
         """Builds a settings dict from whichever command options were given."""
         supplied = {
             "voice": voice,
+            _LOUDNESS: loudness,
             "length_scale": length_scale,
             "noise_scale": noise_scale,
             "length_w_scale": length_w_scale,
@@ -106,6 +118,7 @@ class Piper(commands.Cog, name="piper"):
         settings = dict(client.options)
         if client.voice:
             settings["voice"] = client.voice
+        settings[_LOUDNESS] = self._announcer.loudness
         return settings
 
     async def _voice_autocomplete(
@@ -161,6 +174,7 @@ class Piper(commands.Cog, name="piper"):
     @piper.command(name="set", aliases=get_aliases("set"))
     @app_commands.describe(
         voice="Voice name, e.g. en_US-lessac-medium (Piper) or alba (PocketTTS).",
+        loudness=_LOUDNESS_HELP,
         length_scale="Piper only. Speaking speed. Higher is slower. 1.0 is the model default.",
         noise_scale="Piper only. Expressiveness. Lower is flatter and more robotic.",
         length_w_scale="Piper only. Cadence looseness. Lower is more clipped.",
@@ -173,6 +187,7 @@ class Piper(commands.Cog, name="piper"):
         self,
         ctx: commands.Context,
         voice: str = None,
+        loudness: commands.Range[int, 0, 100] = None,
         length_scale: commands.Range[float, 0.1, 3.0] = None,
         noise_scale: commands.Range[float, 0.0, 1.0] = None,
         length_w_scale: commands.Range[float, 0.0, 3.0] = None,
@@ -182,7 +197,7 @@ class Piper(commands.Cog, name="piper"):
         if not self._announcer:
             return await send_localized_message(ctx, "settings.actions.announceNotConfigured", ephemeral=True)
 
-        updates = self._collect(voice, length_scale, noise_scale, length_w_scale, speaker_id)
+        updates = self._collect(voice, loudness, length_scale, noise_scale, length_w_scale, speaker_id)
         if not updates:
             return await self.show(ctx)
 
@@ -221,6 +236,7 @@ class Piper(commands.Cog, name="piper"):
     @piper.command(name="default", aliases=get_aliases("default"))
     @app_commands.describe(
         voice="Voice name, e.g. en_US-lessac-medium (Piper) or alba (PocketTTS).",
+        loudness=_LOUDNESS_HELP,
         length_scale="Piper only. Speaking speed. Higher is slower. 1.0 is the model default.",
         noise_scale="Piper only. Expressiveness. Lower is flatter and more robotic.",
         length_w_scale="Piper only. Cadence looseness. Lower is more clipped.",
@@ -232,6 +248,7 @@ class Piper(commands.Cog, name="piper"):
         self,
         ctx: commands.Context,
         voice: str = None,
+        loudness: commands.Range[int, 0, 100] = None,
         length_scale: commands.Range[float, 0.1, 3.0] = None,
         noise_scale: commands.Range[float, 0.0, 1.0] = None,
         length_w_scale: commands.Range[float, 0.0, 3.0] = None,
@@ -244,7 +261,7 @@ class Piper(commands.Cog, name="piper"):
         if not self._announcer:
             return await send_localized_message(ctx, "settings.actions.announceNotConfigured", ephemeral=True)
 
-        updates = self._collect(voice, length_scale, noise_scale, length_w_scale, speaker_id)
+        updates = self._collect(voice, loudness, length_scale, noise_scale, length_w_scale, speaker_id)
         if not updates:
             return await self.show(ctx)
 
@@ -256,18 +273,23 @@ class Piper(commands.Cog, name="piper"):
 
         options = client.filter_options(updates)
         client.configure(voice=updates.get("voice"), options=options)
+        if _LOUDNESS in updates:
+            self._announcer.loudness = updates[_LOUDNESS]
 
         # Mirror the change into the loaded config and back out to disk, so a
         # restart does not quietly undo it. announce_settings is the same dict
         # Config handed out at startup, so mutating it is what the rest of the
         # bot already reads. The engine keeps its own block, so tuning one does
-        # not disturb what the other is configured with.
+        # not disturb what the other is configured with; loudness is the bot's
+        # own work and sits at the top level.
         announce_settings = voicelink.Config().announce_settings
         engine_cfg = announce_settings.setdefault(client.NAME, {})
         if "voice" in updates:
             engine_cfg["voice"] = updates["voice"]
         if options:
             engine_cfg.setdefault("options", {}).update(options)
+        if _LOUDNESS in updates:
+            announce_settings[_LOUDNESS] = self._announcer.loudness
 
         func.update_json("settings.json", {"announce_settings": announce_settings})
         await send_localized_message(ctx, "settings.actions.piperUpdated", ", ".join(updates))

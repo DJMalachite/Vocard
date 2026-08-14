@@ -155,6 +155,7 @@ Non-English models are chosen when the server starts, not per request:
     "default_template": "Up next: @@track_name@@ by @@track_author@@",
     "default_ai_prompt": "You are an energetic radio DJ. In one short sentence of at most 25 words, announce the next song: @@track_name@@ by @@track_author@@, requested by @@track_requester_name@@. Reply with only the announcement text.",
     "max_text_length": 300,
+    "loudness": 95,
     "queue_lookahead": 3,
     "timeouts": { "ai": 10, "piper": 10, "pocket": 60 }
 }
@@ -172,6 +173,8 @@ Non-English models are chosen when the server starts, not per request:
   the same compose network. Give the base URL only; `/synthesize` and `/tts` are appended.
 - `timeouts.pocket` defaults to 60 seconds rather than Piper's 10: synthesis is real
   inference on the CPU, and the very first request also fetches the model and voice.
+- `loudness` — how loud announcements are made, as a percentage of full scale, and also
+  settable from Discord. See [Announcement loudness](#announcement-loudness).
 - `piper.options` — optional per-request synthesis tuning, passed straight to Piper's
   `/synthesize` endpoint. Keys: `length_scale` (speed; higher = slower), `noise_scale`
   (expressiveness; lower = flatter/robotic), `length_w_scale` (cadence looseness),
@@ -278,6 +281,7 @@ engine is active (it kept the name it was born with). Pair it with
 /piper set length_scale:1.15 noise_scale:0.3  (this server only — Manage Server)
 /piper set voice:en_GB-alba-medium
 /piper set voice:michael                      (PocketTTS: its 26 voices are offered as autocomplete)
+/piper set loudness:100                       (louder clips — see Announcement loudness)
 /piper reset                                  (drop this server's overrides)
 /piper default length_scale:1.05              (bot-wide — owner only)
 ```
@@ -297,7 +301,9 @@ Under Piper the knobs are the ones described under `piper.options` above: `lengt
 (speed, higher is slower), `noise_scale` (expressiveness, lower is flatter), `length_w_scale`
 (cadence looseness) and `speaker_id` (multi-speaker models). Anything else is dropped before
 the request is built. PocketTTS takes `voice` and nothing else — its speed and temperature
-are fixed when the server loads its model.
+are fixed when the server loads its model. `loudness` is offered on both, because the bot
+applies it to the finished clip rather than asking the engine for it; `/piper default
+loudness` writes it to `announce_settings.loudness`, outside either engine's block.
 
 Guild overrides are stored under the one `tts_announce.piper` key whichever engine is
 running, so a server that picked a voice for one engine still has it stored after the owner
@@ -315,6 +321,40 @@ Two caveats:
 - **`/piper default` rewrites `settings.json`.** It goes through the same `update_json`
   helper the version stamp uses, which re-serialises the whole file at 4-space indent, so
   any hand-formatting in that file is reflowed.
+
+### Announcement loudness
+
+PocketTTS is noticeably quieter than Piper out of the box: Piper normalises everything it
+synthesises to full scale, PocketTTS just clamps its decoder output, so the same sentence
+comes out at maybe a third of the level. The mixer cannot make that up — NodeLink's layer
+volume is capped at 1.0 and `announce_volume` already defaults to 100 — so the bot levels the
+clip itself, and `loudness` is how loud it aims for:
+
+```
+/piper set loudness:100          (this server — Manage Server)
+/piper default loudness:100      (bot-wide — owner only)
+```
+
+```json
+"announce_settings": { "loudness": 95 }
+```
+
+Every clip is scaled up until its loudest sample sits at that percentage of full scale.
+It only ever boosts: a clip that is already loud (anything from Piper) passes through
+untouched, so this lifts the quiet engine to match rather than re-levelling everything.
+`0` turns it off and leaves whatever the engine produced. It applies in both fade and
+overlay mode, and takes effect on the next announcement — no restart.
+
+Three knobs stack, in this order:
+
+| Knob | What it does |
+|---|---|
+| `loudness` (`/piper set loudness`) | how loud the clip itself is made, before it reaches the node |
+| `transition.announce_volume` | the mixer layer's volume, 0–100 — scales the clip **down** only |
+| `transition.duck_to` | how far the music drops underneath, which sets the contrast |
+
+If announcements are still too quiet at `loudness:100`, the speech is not the problem —
+lower `duck_to` so there is less music competing with it.
 
 ### Smooth transitions
 

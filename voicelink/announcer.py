@@ -133,8 +133,48 @@ def _read_samples(wav: bytes, frames: int) -> array.array:
     return samples
 
 
-def to_mixer_pcm(wav: bytes) -> bytes:
-    """Re-renders a PCM WAV as 48 kHz stereo 16-bit.
+def as_percent(value, fallback: int) -> int:
+    """Reads a 0-100 setting, falling back when it is missing or nonsense.
+
+    These arrive from settings.json and from guild documents, so neither the
+    type nor the range can be taken on trust.
+    """
+    try:
+        return max(0, min(100, int(value)))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _boost_to_peak(samples: array.array, target_percent: int) -> array.array:
+    """Scales a clip up until its loudest sample sits at `target_percent`.
+
+    Piper normalises what it synthesises to full scale, PocketTTS does not -
+    its decoder just clamps to +-1.0 - so the same announcement comes out
+    audibly quieter on one engine than the other, and the mixer cannot make up
+    the difference: NodeLink's layer volume tops out at 1.0, which is already
+    the default.
+
+    Boost only. A clip that is already loud is left exactly as it was, so this
+    lifts the quiet engine to match rather than re-levelling everything.
+    """
+    if target_percent <= 0 or not samples:
+        return samples
+
+    peak = max(abs(min(samples)), abs(max(samples)))
+    if not peak:
+        return samples
+
+    ceiling = 32767 * min(100, target_percent) / 100
+    gain = ceiling / peak
+    if gain <= 1.0:
+        return samples
+
+    logger.debug(f"Boosting announcement clip by {gain:.2f}x to reach {target_percent}% of full scale.")
+    return array.array("h", (max(-32768, min(32767, int(sample * gain))) for sample in samples))
+
+
+def to_mixer_pcm(wav: bytes, loudness: int = 0) -> bytes:
+    """Re-renders a PCM WAV as 48 kHz stereo 16-bit, optionally levelled up.
 
     NodeLink's mixer never converts sample formats. `AudioMixer.mixBuffers`
     adds each layer onto the main track sample by sample, and `readLayerChunks`
@@ -159,6 +199,9 @@ def to_mixer_pcm(wav: bytes) -> bytes:
 
     Converting here keeps the mixer's assumptions true whichever voice is
     configured, and leaves an already-correct clip untouched.
+
+    `loudness` levels the speech up to that percentage of full scale on the
+    way through; 0 leaves the engine's own level alone.
     """
     wav = repair_wav_header(wav)
 
@@ -179,7 +222,8 @@ def to_mixer_pcm(wav: bytes) -> bytes:
         return wav
 
     native = (channels, rate) == (MIXER_CHANNELS, MIXER_SAMPLE_RATE)
-    if native and (frames * channels * width) % MIXER_FRAME_BYTES == 0:
+    aligned = (frames * channels * width) % MIXER_FRAME_BYTES == 0
+    if native and aligned and loudness <= 0:
         return wav
 
     samples = _read_samples(wav, frames)
@@ -189,6 +233,14 @@ def to_mixer_pcm(wav: bytes) -> bytes:
     frames = len(samples) // channels
     if not frames:
         return wav
+
+    # Level the speech before resampling, so the gain is worked out from the
+    # samples the engine actually produced.
+    levelled = _boost_to_peak(samples, loudness)
+    if native and aligned and levelled is samples:
+        # Right format, right length, and loud enough already.
+        return wav
+    samples = levelled
 
     if not native:
         logger.debug(
@@ -686,11 +738,24 @@ class Announcer:
             "Reply with only the announcement text."
         )
         self._max_text_length: int = settings.get("max_text_length", 300)
+        # Percentage of full scale to lift quiet clips to. NodeLink's mixer
+        # volume already tops out at 1.0, so loudness the engine did not
+        # produce has to be added here or not at all.
+        self._loudness: int = as_percent(settings.get("loudness"), 95)
 
     @property
     def tts(self) -> TTSClient:
         """The synthesis client, so its defaults can be retuned at runtime."""
         return self._tts
+
+    @property
+    def loudness(self) -> int:
+        """The bot-wide clip level, as a percentage of full scale."""
+        return self._loudness
+
+    @loudness.setter
+    def loudness(self, value: int) -> None:
+        self._loudness = as_percent(value, self._loudness)
 
     async def start(self) -> None:
         await self._server.start()
@@ -738,7 +803,8 @@ class Announcer:
             logger.debug(f"{self._tts.NAME} returned {len(wav)} bytes, format {wav_format(wav)}.")
             # Conversion is pure CPU work on a few hundred KB, so keep it off
             # the event loop.
-            wav = await asyncio.to_thread(to_mixer_pcm, wav)
+            loudness = as_percent(voice_cfg.get("loudness"), self._loudness)
+            wav = await asyncio.to_thread(to_mixer_pcm, wav, loudness)
 
             url = self._server.put(wav)
             results = await player.node.get_tracks(url, requester=player.guild.me)
