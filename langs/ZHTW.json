@@ -132,7 +132,8 @@
             "announceSpoken": "正在播放該語音播報。",
             "announceTestFailed": "無法產生語音播報。請檢查機器人日誌。",
             "piperUpdated": "已更新 Piper 語音設定：`{0}`。",
-            "piperReset": "已重設本伺服器的 Piper 語音設定。"
+            "piperReset": "已重設本伺服器的 Piper 語音設定。",
+            "piperUnsupported": "`{0}` 無法在語音引擎 `{1}` 上調整，因此未做任何變更。"
         },
         "menu": "伺服器設定 | {0}",
         "basic": {

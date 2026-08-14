@@ -132,7 +132,8 @@
             "announceSpoken": "Lecture de cette annonce en cours.",
             "announceTestFailed": "Impossible de générer l'annonce. Consultez les journaux du bot.",
             "piperUpdated": "Paramètres de voix Piper mis à jour : `{0}`.",
-            "piperReset": "Paramètres de voix Piper de ce serveur réinitialisés."
+            "piperReset": "Paramètres de voix Piper de ce serveur réinitialisés.",
+            "piperUnsupported": "`{0}` ne peut pas être réglé sur le moteur vocal `{1}`, rien n'a donc été modifié."
         },
         "menu": "Paramètres du serveur | {0}",
         "basic": {

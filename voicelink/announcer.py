@@ -55,6 +55,45 @@ MIXER_SAMPLE_WIDTH = 2
 MIXER_FRAME_BYTES = 3840
 
 
+def repair_wav_header(wav: bytes) -> bytes:
+    """Rewrites the RIFF/data sizes of a WAV to match how many bytes arrived.
+
+    A server that streams synthesis has to write the header before it knows how
+    long the clip will be, so it declares a placeholder length it can never go
+    back and correct - PocketTTS writes one billion frames. Every reader then
+    believes the clip is hours long: `wave` reports the bogus frame count, the
+    resampler in `to_mixer_pcm` tries to allocate an array for it, and the
+    duration stamped on the track is meaningless.
+
+    The audio itself is fine, only the two size fields are wrong, so patch them
+    from the real byte count. A WAV that already agrees with itself is returned
+    untouched.
+    """
+    if len(wav) < 44 or wav[0:4] != b"RIFF" or wav[8:12] != b"WAVE":
+        return wav
+
+    pos = 12
+    while pos + 8 <= len(wav):
+        size = int.from_bytes(wav[pos + 4:pos + 8], "little")
+        body = pos + 8
+
+        if wav[pos:pos + 4] == b"data":
+            actual = len(wav) - body
+            if size == actual:
+                return wav
+
+            logger.debug(f"Repairing a streamed WAV header: data chunk claims {size} bytes, {actual} arrived.")
+            patched = bytearray(wav)
+            patched[pos + 4:body] = actual.to_bytes(4, "little")
+            patched[4:8] = (len(wav) - 8).to_bytes(4, "little")
+            return bytes(patched)
+
+        # Chunks are padded to an even length.
+        pos = body + size + (size & 1)
+
+    return wav
+
+
 def wav_format(wav: bytes) -> Optional[tuple[int, int, int, int]]:
     """Returns (channels, sample width, frame rate, frames) for a PCM WAV, or None."""
     try:
@@ -100,10 +139,10 @@ def to_mixer_pcm(wav: bytes) -> bytes:
     NodeLink's mixer never converts sample formats. `AudioMixer.mixBuffers`
     adds each layer onto the main track sample by sample, and `readLayerChunks`
     reads 3840 bytes per 20ms frame - both of which assume the layer is already
-    48 kHz stereo s16. Piper synthesises at whatever rate the voice model uses
-    (22050 Hz mono for the medium voices), so passing its output straight
-    through lines the clip up against the wrong samples and it comes out as
-    noise rather than speech.
+    48 kHz stereo s16. The TTS engines synthesise at whatever rate their model
+    uses (22050 Hz mono for Piper's medium voices, 24000 Hz mono for PocketTTS),
+    so passing that output straight through lines the clip up against the wrong
+    samples and it comes out as noise rather than speech.
 
     The clip is also padded out to a whole number of 20ms mixer frames.
     `readLayerChunks` drains a layer 3840 bytes at a time, but only retires it
@@ -121,15 +160,17 @@ def to_mixer_pcm(wav: bytes) -> bytes:
     Converting here keeps the mixer's assumptions true whichever voice is
     configured, and leaves an already-correct clip untouched.
     """
+    wav = repair_wav_header(wav)
+
     fmt = wav_format(wav)
     if not fmt:
-        logger.warning("Piper did not return a readable PCM WAV; sending the clip through unconverted.")
+        logger.warning("The TTS engine did not return a readable PCM WAV; sending the clip through unconverted.")
         return wav
 
     channels, width, rate, frames = fmt
     if width != MIXER_SAMPLE_WIDTH:
         logger.warning(
-            f"Piper returned {width * 8}-bit audio, which cannot be converted for the mixer; "
+            f"The TTS engine returned {width * 8}-bit audio, which cannot be converted for the mixer; "
             "sending the clip through unconverted."
         )
         return wav
@@ -142,6 +183,12 @@ def to_mixer_pcm(wav: bytes) -> bytes:
         return wav
 
     samples = _read_samples(wav, frames)
+    # Trust what was actually read over what the header promised: a truncated
+    # clip would otherwise size the output buffer from a frame count that never
+    # arrived.
+    frames = len(samples) // channels
+    if not frames:
+        return wav
 
     if not native:
         logger.debug(
@@ -316,24 +363,42 @@ class AnnounceServer:
                 self._store.pop(token, None)
             logger.info(f"Announce server sweep complete, {len(self._store)} clips remain in memory.")
 
-class PiperClient:
-    """Minimal client for the piper-tts HTTP server: POST JSON to /synthesize, receive WAV bytes."""
+class TTSClient:
+    """Base class for the speech engines announcements can be synthesised with.
 
-    # The numeric synthesis knobs Piper accepts alongside the text. Anything
+    Subclasses differ only in the request they build; everything the rest of
+    the bot touches - the configured voice, the tunable knobs, and how guild
+    overrides layer on top of the bot-wide defaults - lives here.
+    """
+
+    # Shown in logs and in /piper show, and the key both the settings block and
+    # the timeout are read from.
+    NAME: str = "tts"
+    DEFAULT_URL: str = "http://localhost:8000"
+    DEFAULT_TIMEOUT: int = 10
+
+    # The synthesis knobs this engine accepts alongside the text. Anything
     # outside this list is not forwarded, so a stray guild setting cannot
-    # corrupt the request body.
-    OPTION_KEYS: tuple = ("length_scale", "noise_scale", "length_w_scale", "speaker_id")
+    # corrupt the request - and switching engines cannot carry a knob over to
+    # one that has never heard of it.
+    OPTION_KEYS: tuple = ()
 
     def __init__(self, url: str, voice: Optional[str] = None, timeout: int = 60, options: Optional[dict] = None):
-        url = url.rstrip("/")
-        if not url.endswith("/synthesize"):
-            url += "/synthesize"
-        self._url: str = url
+        self._url: str = self._build_url(url)
         self._voice: Optional[str] = voice
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
-        # Per-request synthesis overrides, e.g. length_scale, noise_scale,
-        # length_w_scale, speaker_id.
+        # Bot-wide synthesis overrides from settings.json, passed through to
+        # the engine as configured.
         self._options: dict = dict(options or {})
+
+    @staticmethod
+    def _build_url(url: str) -> str:
+        """Turns the configured base URL into the synthesis endpoint."""
+        return url.rstrip("/")
+
+    @property
+    def url(self) -> str:
+        return self._url
 
     @property
     def voice(self) -> Optional[str]:
@@ -356,9 +421,37 @@ class PiperClient:
             self._options.update(options)
 
     @classmethod
-    def filter_options(cls, source: dict) -> dict:
+    def filter_options(cls, source: Optional[dict]) -> dict:
         """Picks the recognised synthesis knobs out of a settings dict."""
         return {key: value for key, value in (source or {}).items() if key in cls.OPTION_KEYS}
+
+    def resolve_voice(self, voice: Optional[str]) -> Optional[str]:
+        """The voice to synthesise with, given a per-call override."""
+        return voice or self._voice
+
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        voice: Optional[str] = None,
+        options: Optional[dict] = None
+    ) -> Optional[bytes]:
+        """Returns WAV bytes, or None if the engine could not produce them."""
+        raise NotImplementedError
+
+
+class PiperClient(TTSClient):
+    """Minimal client for the piper-tts HTTP server: POST JSON to /synthesize, receive WAV bytes."""
+
+    NAME: str = "piper"
+    DEFAULT_URL: str = "http://localhost:5000"
+    DEFAULT_TIMEOUT: int = 10
+    OPTION_KEYS: tuple = ("length_scale", "noise_scale", "length_w_scale", "speaker_id")
+
+    @staticmethod
+    def _build_url(url: str) -> str:
+        url = url.rstrip("/")
+        return url if url.endswith("/synthesize") else url + "/synthesize"
 
     async def synthesize(
         self,
@@ -369,8 +462,8 @@ class PiperClient:
     ) -> Optional[bytes]:
         # Per-call values win over the bot-wide defaults, which is what makes
         # a guild override an override.
-        payload = {**self._options, **(options or {}), "text": text}
-        if selected := (voice or self._voice):
+        payload = {**self._options, **self.filter_options(options), "text": text}
+        if selected := self.resolve_voice(voice):
             payload["voice"] = selected
 
         async with aiohttp.ClientSession(timeout=self._timeout) as session:
@@ -380,6 +473,102 @@ class PiperClient:
                     logger.warning(f"Piper returned status {resp.status} for synthesis request.")
                     return None
                 return await resp.read()
+
+
+class PocketTTSClient(TTSClient):
+    """Client for a `pocket-tts serve` instance.
+
+    PocketTTS (https://github.com/kyutai-labs/pocket-tts) is a 100M-parameter
+    CPU model with noticeably more natural delivery than Piper. Its API is a
+    single form-encoded POST to /tts which answers with a streamed WAV; there
+    are no per-request knobs, because speed and temperature are fixed when the
+    server loads its model.
+    """
+
+    NAME: str = "pocket"
+    DEFAULT_URL: str = "http://localhost:8000"
+    # Synthesis runs on the CPU and the first call also has to fetch the voice,
+    # so this needs far more headroom than Piper.
+    DEFAULT_TIMEOUT: int = 60
+
+    # Voice names built into the server. Anything else has to be a URL it can
+    # download the conditioning audio from.
+    VOICES: tuple = (
+        "alba", "anna", "azelma", "bill_boerst", "caro_davy", "charles", "cosette",
+        "eponine", "estelle", "eve", "fantine", "george", "giovanni", "jane",
+        "javert", "jean", "juergen", "lola", "marius", "mary", "michael", "paul",
+        "peter_yearsley", "rafael", "stuart_bell", "vera"
+    )
+    VOICE_URL_SCHEMES: tuple = ("http://", "https://", "hf://")
+
+    @staticmethod
+    def _build_url(url: str) -> str:
+        url = url.rstrip("/")
+        return url if url.endswith("/tts") else url + "/tts"
+
+    @classmethod
+    def is_valid_voice(cls, voice: str) -> bool:
+        return voice in cls.VOICES or voice.startswith(cls.VOICE_URL_SCHEMES)
+
+    def resolve_voice(self, voice: Optional[str] = None) -> Optional[str]:
+        """Picks a voice the server will actually accept.
+
+        A guild that chose a Piper voice keeps that setting after the owner
+        switches engines, and PocketTTS answers an unknown name with a 400 -
+        which would silently cost that guild every announcement. Dropping back
+        to the bot default, and then to the server's own, keeps it talking.
+        """
+        for candidate in (voice, self._voice):
+            if not candidate:
+                continue
+            if self.is_valid_voice(candidate):
+                return candidate
+            logger.warning(
+                f"'{candidate}' is not a PocketTTS voice and is not a http(s):// or hf:// URL, ignoring it. "
+                f"Built-in voices: {', '.join(self.VOICES)}."
+            )
+
+        return None
+
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        voice: Optional[str] = None,
+        options: Optional[dict] = None
+    ) -> Optional[bytes]:
+        payload = {"text": text}
+        if selected := self.resolve_voice(voice):
+            payload["voice_url"] = selected
+
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            async with session.post(self._url, data=payload) as resp:
+                logger.info(f"PocketTTS synthesis requested with payload {payload}, got status {resp.status}.")
+                if resp.status != 200:
+                    detail = (await resp.text())[:200]
+                    logger.warning(f"PocketTTS returned status {resp.status} for synthesis request: {detail}")
+                    return None
+
+                # The response is generated as it is spoken, so the header it
+                # opens with promises a length the clip will never have.
+                wav = repair_wav_header(await resp.read())
+
+        if not wav:
+            logger.warning("PocketTTS returned an empty response for the synthesis request.")
+            return None
+
+        return wav
+
+
+# The engines announce_settings.engine can name, and the settings block each
+# one reads its url/voice from.
+ENGINES: dict = {
+    "piper": PiperClient,
+    "pocket": PocketTTSClient,
+    "pockettts": PocketTTSClient,
+    "pocket-tts": PocketTTSClient,
+    "pocket_tts": PocketTTSClient
+}
 
 
 class AIClient:
@@ -444,7 +633,6 @@ class Announcer:
     def __init__(self, bot: commands.Bot, settings: dict):
         self._bot: commands.Bot = bot
 
-        piper_cfg = settings.get("piper", {})
         server_cfg = settings.get("server", {})
         ai_cfg = settings.get("ai", {})
         timeouts = settings.get("timeouts", {})
@@ -454,11 +642,22 @@ class Announcer:
             port=server_cfg.get("port", 8100),
             public_url=server_cfg.get("public_url", "http://127.0.0.1:8100")
         )
-        self._piper = PiperClient(
-            url=piper_cfg.get("url", "http://localhost:5000"),
-            voice=piper_cfg.get("voice"),
-            timeout=timeouts.get("piper", 10),
-            options=piper_cfg.get("options")
+
+        engine = ENGINES.get(str(settings.get("engine", PiperClient.NAME)).strip().lower())
+        if engine is None:
+            logger.warning(
+                f"announce_settings.engine is not one of {', '.join(sorted(ENGINES))}; falling back to Piper."
+            )
+            engine = PiperClient
+
+        # Each engine reads its own settings block, so switching between them
+        # is one key and neither one's URL or voice is lost on the way.
+        engine_cfg = settings.get(engine.NAME) or {}
+        self._tts: TTSClient = engine(
+            url=engine_cfg.get("url", engine.DEFAULT_URL),
+            voice=engine_cfg.get("voice"),
+            timeout=timeouts.get(engine.NAME, engine.DEFAULT_TIMEOUT),
+            options=engine_cfg.get("options")
         )
         self._ai = AIClient(
             base_url=ai_cfg.get("base_url", "https://api.openai.com/v1"),
@@ -489,12 +688,13 @@ class Announcer:
         self._max_text_length: int = settings.get("max_text_length", 300)
 
     @property
-    def piper(self) -> PiperClient:
+    def tts(self) -> TTSClient:
         """The synthesis client, so its defaults can be retuned at runtime."""
-        return self._piper
+        return self._tts
 
     async def start(self) -> None:
         await self._server.start()
+        logger.info(f"Announcements will be synthesised by {self._tts.NAME} at {self._tts.url}.")
         if not self._spotify.is_configured:
             logger.info(
                 "No Spotify credentials configured, so @@track_genre@@ will always be empty. "
@@ -524,16 +724,18 @@ class Announcer:
                 return None
             text = " ".join(text.split())[:self._max_text_length]
 
-            piper_cfg = guild_cfg.get("piper") or {}
-            wav = await self._piper.synthesize(
+            # Guild voice overrides live under the same key whichever engine is
+            # in use; the client drops anything its engine cannot honour.
+            voice_cfg = guild_cfg.get("piper") or {}
+            wav = await self._tts.synthesize(
                 text,
-                voice=piper_cfg.get("voice"),
-                options=PiperClient.filter_options(piper_cfg)
+                voice=voice_cfg.get("voice"),
+                options=self._tts.filter_options(voice_cfg)
             )
             if not wav:
                 return None
 
-            logger.debug(f"Piper returned {len(wav)} bytes, format {wav_format(wav)}.")
+            logger.debug(f"{self._tts.NAME} returned {len(wav)} bytes, format {wav_format(wav)}.")
             # Conversion is pure CPU work on a few hundred KB, so keep it off
             # the event loop.
             wav = await asyncio.to_thread(to_mixer_pcm, wav)
