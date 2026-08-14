@@ -132,7 +132,8 @@
             "announceSpoken": "Die Ansage wird jetzt abgespielt.",
             "announceTestFailed": "Die Ansage konnte nicht erstellt werden. Prüfe die Bot-Logs.",
             "piperUpdated": "Piper-Stimmeinstellungen aktualisiert: `{0}`.",
-            "piperReset": "Piper-Stimmeinstellungen dieses Servers zurückgesetzt."
+            "piperReset": "Piper-Stimmeinstellungen dieses Servers zurückgesetzt.",
+            "piperUnsupported": "`{0}` kann bei der Sprach-Engine `{1}` nicht eingestellt werden, es wurde nichts geändert."
         },
         "menu": "Servereinstellungen | {0}",
         "basic": {

@@ -64,10 +64,15 @@
     },
     "announce_settings": {
         "enable": true,
+        "engine": "piper",
         "piper": {
             "url": "http://piper:5000",
             "voice": "en_US-lessac-medium",
             "options": {}
+        },
+        "pocket": {
+            "url": "http://pocket-tts:8000",
+            "voice": "alba"
         },
         "server": {
             "host": "0.0.0.0",
@@ -87,6 +92,7 @@
         "timeouts": {
             "ai": 10,
             "piper": 10,
+            "pocket": 60,
             "spotify": 8
         },
         "default_ai_persona": "You are an energetic radio DJ with a warm, concise delivery.",

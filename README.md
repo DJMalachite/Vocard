@@ -14,8 +14,10 @@ the `beta` branch.
 
 ### 🔊 TTS song announcements
 
-The bot can announce the next song in the voice channel using a local
-[Piper](https://github.com/OHF-Voice/piper1-gpl) TTS server. Two per-guild modes:
+The bot can announce the next song in the voice channel using a local TTS server — either
+[Piper](https://github.com/OHF-Voice/piper1-gpl) or the more natural-sounding
+[PocketTTS](https://github.com/kyutai-labs/pocket-tts), picked with one settings key. Two
+per-guild modes:
 
 * **Simple** — a template such as `Up next: @@track_name@@ by @@track_author@@`, using the same
   placeholder system as the music controller
@@ -31,10 +33,10 @@ Features:
   into it, so there is no gap and no abrupt cut
 * **Frequency and cooldown** — announce every Nth song, and/or at most once every X minutes
 * **`@@track_genre@@`** — real genre data via the Spotify API, cached per artist
-* **Fail-open** — if Piper, the AI endpoint or the network misbehaves, the song simply plays
-  without an announcement and a warning is logged; playback is never blocked
-* **Voice tuning** — speed, expressiveness and cadence are configurable per request, so you can
-  change how the voice sounds without touching the Piper container
+* **Fail-open** — if the TTS server, the AI endpoint or the network misbehaves, the song simply
+  plays without an announcement and a warning is logged; playback is never blocked
+* **Voice tuning** — `/piper` retunes the live voice from Discord: Piper's speed, expressiveness
+  and cadence, or PocketTTS's 26 built-in voices, without restarting anything
 
 Configure per guild with `/settings announce` (requires Manage Server). Full setup and tuning
 guide: **[docs/tts-announce.md](docs/tts-announce.md)**.
@@ -44,7 +46,8 @@ guide: **[docs/tts-announce.md](docs/tts-announce.md)**.
 `docker-compose.dev.yml` brings up the bot, [NodeLink](https://github.com/PerformanC/NodeLink)
 (a Lavalink-v4-compatible server with built-in sources and an audio mixer), MongoDB, Piper TTS,
 a YouTube cipher service and the [dashboard](https://github.com/ChocoMeow/Vocard-Dashboard) —
-all wired together by service name.
+all wired together by service name. PocketTTS is there too, behind a `--profile pocket` flag so
+its model is only downloaded if you ask for it.
 
 ```bash
 cp .env.example .env                                  # fill in TOKEN and CLIENT_ID
@@ -85,8 +88,9 @@ only need `docker compose restart vocard` (rebuild only when `requirements.txt` 
 * [NodeLink](https://github.com/PerformanC/NodeLink) or a
   [Lavalink Server (4.0.0+)](https://github.com/lavalink-devs/Lavalink) — both included in the
   Docker stacks; NodeLink is required for overlay announcements
-* Optional, for announcements: a [Piper](https://github.com/OHF-Voice/piper1-gpl) HTTP server
-  (included in the Docker stack)
+* Optional, for announcements: a [Piper](https://github.com/OHF-Voice/piper1-gpl) or
+  [PocketTTS](https://github.com/kyutai-labs/pocket-tts) HTTP server (both included in the
+  Docker stack)
 
 ## Setup
 

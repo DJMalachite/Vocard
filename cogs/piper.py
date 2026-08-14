@@ -33,21 +33,28 @@ from function import (
 )
 
 from voicelink import MongoDBHandler, LangHandler
-from voicelink.announcer import PiperClient
+from voicelink.announcer import TTSClient
 from voicelink.utils import dispatch_message, send_localized_message
-
-# Keys a guild may override, in the order they are shown.
-_SETTING_KEYS: tuple = ("voice",) + PiperClient.OPTION_KEYS
 
 
 class Piper(commands.Cog, name="piper"):
     def __init__(self, bot) -> None:
         self.bot: commands.Bot = bot
-        self.description = "Tune the Piper text-to-speech voice used for announcements."
+        self.description = "Tune the text-to-speech voice used for announcements."
 
     @property
     def _announcer(self):
         return getattr(self.bot, "announcer", None)
+
+    @property
+    def _client(self) -> TTSClient:
+        """The engine actually synthesising announcements right now."""
+        return self._announcer.tts
+
+    @staticmethod
+    def _keys(client: TTSClient) -> tuple:
+        """Keys a guild may override on this engine, in the order they are shown."""
+        return ("voice",) + client.OPTION_KEYS
 
     @staticmethod
     def _collect(
@@ -67,11 +74,27 @@ class Piper(commands.Cog, name="piper"):
         }
         return {key: value for key, value in supplied.items() if value is not None}
 
-    @staticmethod
-    def _describe(settings: dict) -> str:
-        """Renders a settings dict for the status embed."""
-        lines = [f"{key}: {settings[key]}" for key in _SETTING_KEYS if key in settings]
+    @classmethod
+    def _describe(cls, client: TTSClient, settings: dict) -> str:
+        """Renders a settings dict for the status embed.
+
+        Only what the active engine can honour is listed. A guild that tuned
+        Piper and then had the owner move to PocketTTS still has the old knobs
+        stored, but they change nothing, so showing them would be a lie.
+        """
+        lines = [f"{key}: {settings[key]}" for key in cls._keys(client) if key in settings]
         return "\n".join(lines) if lines else "-"
+
+    def _unsupported(self, updates: dict) -> list:
+        """The requested keys the active engine has no knob for.
+
+        Rejecting the whole command rather than quietly applying the rest keeps
+        the stored settings and what was asked for in step: PocketTTS takes no
+        numeric tuning at all, so `/piper set voice:alba noise_scale:0.3` would
+        otherwise look half-honoured.
+        """
+        keys = self._keys(self._client)
+        return [key for key in updates if key not in keys]
 
     def _global_settings(self) -> dict:
         """The bot-wide defaults, read from the live client rather than the file.
@@ -79,11 +102,30 @@ class Piper(commands.Cog, name="piper"):
         The client is what actually synthesises, so reading it means the embed
         can never disagree with what the next announcement will sound like.
         """
-        piper = self._announcer.piper
-        settings = dict(piper.options)
-        if piper.voice:
-            settings["voice"] = piper.voice
+        client = self._client
+        settings = dict(client.options)
+        if client.voice:
+            settings["voice"] = client.voice
         return settings
+
+    async def _voice_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Suggests the engine's built-in voices, where it has a fixed set.
+
+        Piper serves whatever was downloaded into its data directory, which the
+        bot cannot enumerate, so there it suggests nothing and the field stays
+        free text.
+        """
+        client = getattr(self._announcer, "tts", None)
+        voices = getattr(client, "VOICES", ())
+        current = (current or "").lower()
+        return [
+            app_commands.Choice(name=voice, value=voice)
+            for voice in voices if current in voice
+        ][:25]
 
     @commands.hybrid_group(
         name="piper",
@@ -104,23 +146,27 @@ class Piper(commands.Cog, name="piper"):
         settings = await MongoDBHandler.get_settings(ctx.guild.id)
         guild_cfg = (settings.get("tts_announce") or {}).get("piper") or {}
 
+        client = self._client
+        defaults = self._global_settings()
+
         texts = await LangHandler.get_lang(ctx.guild.id, "settings.piper.title", "settings.piper.value")
         embed = discord.Embed(title=texts[0], color=voicelink.Config().embed_color)
         embed.description = texts[1].format(
-            self._describe(self._global_settings()),
-            self._describe(guild_cfg),
-            self._describe({**self._global_settings(), **guild_cfg})
+            f"engine: {client.NAME}\n{self._describe(client, defaults)}",
+            self._describe(client, guild_cfg),
+            self._describe(client, {**defaults, **guild_cfg})
         )
         await dispatch_message(ctx, embed)
 
     @piper.command(name="set", aliases=get_aliases("set"))
     @app_commands.describe(
-        voice="Piper voice model, e.g. en_US-lessac-medium. It must exist on the Piper server.",
-        length_scale="Speaking speed. Higher is slower. 1.0 is the model default.",
-        noise_scale="Expressiveness. Lower is flatter and more robotic.",
-        length_w_scale="Cadence looseness. Lower is more clipped.",
-        speaker_id="Speaker index, for multi-speaker models only."
+        voice="Voice name, e.g. en_US-lessac-medium (Piper) or alba (PocketTTS).",
+        length_scale="Piper only. Speaking speed. Higher is slower. 1.0 is the model default.",
+        noise_scale="Piper only. Expressiveness. Lower is flatter and more robotic.",
+        length_w_scale="Piper only. Cadence looseness. Lower is more clipped.",
+        speaker_id="Piper only. Speaker index, for multi-speaker models only."
     )
+    @app_commands.autocomplete(voice=_voice_autocomplete)
     @commands.has_permissions(manage_guild=True)
     @commands.dynamic_cooldown(cooldown_check, commands.BucketType.guild)
     async def set(
@@ -139,6 +185,11 @@ class Piper(commands.Cog, name="piper"):
         updates = self._collect(voice, length_scale, noise_scale, length_w_scale, speaker_id)
         if not updates:
             return await self.show(ctx)
+
+        if unsupported := self._unsupported(updates):
+            return await send_localized_message(
+                ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), self._client.NAME, ephemeral=True
+            )
 
         await MongoDBHandler.update_settings(
             ctx.guild.id,
@@ -169,12 +220,13 @@ class Piper(commands.Cog, name="piper"):
 
     @piper.command(name="default", aliases=get_aliases("default"))
     @app_commands.describe(
-        voice="Piper voice model, e.g. en_US-lessac-medium. It must exist on the Piper server.",
-        length_scale="Speaking speed. Higher is slower. 1.0 is the model default.",
-        noise_scale="Expressiveness. Lower is flatter and more robotic.",
-        length_w_scale="Cadence looseness. Lower is more clipped.",
-        speaker_id="Speaker index, for multi-speaker models only."
+        voice="Voice name, e.g. en_US-lessac-medium (Piper) or alba (PocketTTS).",
+        length_scale="Piper only. Speaking speed. Higher is slower. 1.0 is the model default.",
+        noise_scale="Piper only. Expressiveness. Lower is flatter and more robotic.",
+        length_w_scale="Piper only. Cadence looseness. Lower is more clipped.",
+        speaker_id="Piper only. Speaker index, for multi-speaker models only."
     )
+    @app_commands.autocomplete(voice=_voice_autocomplete)
     @commands.dynamic_cooldown(cooldown_check, commands.BucketType.guild)
     async def default(
         self,
@@ -196,19 +248,26 @@ class Piper(commands.Cog, name="piper"):
         if not updates:
             return await self.show(ctx)
 
-        options = PiperClient.filter_options(updates)
-        self._announcer.piper.configure(voice=updates.get("voice"), options=options)
+        client = self._client
+        if unsupported := self._unsupported(updates):
+            return await send_localized_message(
+                ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), client.NAME, ephemeral=True
+            )
+
+        options = client.filter_options(updates)
+        client.configure(voice=updates.get("voice"), options=options)
 
         # Mirror the change into the loaded config and back out to disk, so a
         # restart does not quietly undo it. announce_settings is the same dict
         # Config handed out at startup, so mutating it is what the rest of the
-        # bot already reads.
+        # bot already reads. The engine keeps its own block, so tuning one does
+        # not disturb what the other is configured with.
         announce_settings = voicelink.Config().announce_settings
-        piper_cfg = announce_settings.setdefault("piper", {})
+        engine_cfg = announce_settings.setdefault(client.NAME, {})
         if "voice" in updates:
-            piper_cfg["voice"] = updates["voice"]
+            engine_cfg["voice"] = updates["voice"]
         if options:
-            piper_cfg.setdefault("options", {}).update(options)
+            engine_cfg.setdefault("options", {}).update(options)
 
         func.update_json("settings.json", {"announce_settings": announce_settings})
         await send_localized_message(ctx, "settings.actions.piperUpdated", ", ".join(updates))

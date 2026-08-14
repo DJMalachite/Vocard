@@ -1,8 +1,9 @@
-# TTS Song Announcements (PiperTTS)
+# TTS Song Announcements
 
 Vocard can announce the next song in the voice channel before it plays, using a local
-[Piper](https://github.com/OHF-Voice/piper1-gpl) text-to-speech server. Announcement text
-comes from one of two per-guild modes:
+text-to-speech server — either [Piper](https://github.com/OHF-Voice/piper1-gpl) or
+[PocketTTS](https://github.com/kyutai-labs/pocket-tts), chosen with
+`announce_settings.engine`. Announcement text comes from one of two per-guild modes:
 
 - **Simple** — a template like `Up next: @@track_name@@ by @@track_author@@`, using the same
   `@@variable@@` / `{{condition ?? text}}` placeholder system as the music controller and
@@ -11,13 +12,13 @@ comes from one of two per-guild modes:
   local [Ollama](https://ollama.com) instance) from a customizable prompt. The prompt also
   supports `@@variable@@` placeholders.
 
-If anything fails (Piper down, AI timeout, Lavalink can't load the clip), the song simply
-plays without an announcement and a warning is logged — playback is never blocked.
+If anything fails (the TTS server down, AI timeout, Lavalink can't load the clip), the song
+simply plays without an announcement and a warning is logged — playback is never blocked.
 
 ## How it works
 
 ```
-Bot renders text ──► Piper HTTP server (text → WAV)
+Bot renders text ──► TTS HTTP server (text → WAV)
                         │
 Bot stores WAV in memory and serves it at http://<bot>:8100/announce/<id>.wav
                         │
@@ -27,7 +28,25 @@ Lavalink loads that URL (default http source) and plays it before the song
 Because Lavalink fetches the audio **from the bot**, Lavalink must be able to reach the
 bot's announce server over the network (see Networking below).
 
-## 1. Deploy a Piper HTTP server
+## Choosing an engine
+
+| | [Piper](https://github.com/OHF-Voice/piper1-gpl) | [PocketTTS](https://github.com/kyutai-labs/pocket-tts) |
+|---|---|---|
+| `announce_settings.engine` | `"piper"` (default) | `"pocket"` |
+| Sound | clear but synthetic | markedly more natural, closer to a real speaker |
+| Cost | tiny; runs anywhere | 100M-parameter model, ~6x realtime on two CPU cores |
+| Install | `piper-tts[http]`, ~50 MB | `pocket-tts` + torch, ~500 MB and a model download |
+| Voices | any downloaded `.onnx` model | 26 built-in voices, or clone one from a URL |
+| Tuning | speed, expressiveness, cadence, speaker | voice only |
+| Languages | one model per language | English, French, German, Italian, Portuguese, Spanish |
+
+Only one engine is active at a time, but both keep their own settings block, so switching
+is a one-word change and nothing is lost on the way back.
+
+Everything downstream of synthesis is identical: the same modes, placeholders, frequency
+rules, overlay/fade transitions and `/piper` commands apply to both.
+
+## 1a. Deploy a Piper HTTP server
 
 Recommended: run the official `piper-tts` HTTP server in Docker next to Lavalink.
 
@@ -61,14 +80,67 @@ downloaded automatically on first use.
 > **Note:** `rhasspy/wyoming-piper` images speak the Wyoming protocol (raw TCP), not HTTP —
 > they will NOT work with this feature.
 
+## 1b. Deploy a PocketTTS server
+
+PocketTTS ships its own HTTP server (`pocket-tts serve`), which keeps the model in memory
+between requests. `docker-compose.dev.yml` has it behind a profile so it is only built when
+asked for:
+
+```bash
+docker compose -f docker-compose.dev.yml --profile pocket up -d
+```
+
+Or by hand — the CPU torch wheel is worth pinning, otherwise pip pulls the multi-gigabyte
+CUDA build:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install pocket-tts
+pocket-tts serve --host 0.0.0.0 --port 8000
+```
+
+Smoke-test it (the endpoint is form-encoded, and the bot appends `/tts` to `pocket.url`
+automatically):
+
+```bash
+curl -X POST -F "text=hello world" -F "voice_url=alba" http://localhost:8000/tts -o test.wav
+```
+
+The first call downloads the model and the voice, so it takes far longer than the rest;
+`http://localhost:8000/` is a web UI for trying voices out. The container caches both under
+`/root/.cache`, which the compose file keeps in a named volume.
+
+Built-in voices, all usable as `voice`:
+
+```
+English    alba anna azelma bill_boerst caro_davy charles cosette eponine eve
+           fantine george jane javert jean marius mary michael paul
+           peter_yearsley stuart_bell vera
+French     estelle      German  juergen      Italian  giovanni
+Portuguese rafael       Spanish lola
+```
+
+To clone a different voice, give `voice` an `http://`, `https://` or `hf://` URL pointing
+at a sample of the speaker instead of a name. Anything that is neither a built-in name nor
+such a URL is ignored with a warning and the server's own default is used — that is what
+keeps a guild that had picked a Piper voice talking after the engine is switched.
+
+Non-English models are chosen when the server starts, not per request:
+`pocket-tts serve --language french_24l`.
+
 ## 2. Configure `settings.json`
 
 ```json
 "announce_settings": {
     "enable": true,
+    "engine": "piper",
     "piper": {
         "url": "http://localhost:5000",
         "voice": "en_US-lessac-medium"
+    },
+    "pocket": {
+        "url": "http://localhost:8000",
+        "voice": "alba"
     },
     "server": {
         "host": "0.0.0.0",
@@ -84,16 +156,22 @@ downloaded automatically on first use.
     "default_ai_prompt": "You are an energetic radio DJ. In one short sentence of at most 25 words, announce the next song: @@track_name@@ by @@track_author@@, requested by @@track_requester_name@@. Reply with only the announcement text.",
     "max_text_length": 300,
     "queue_lookahead": 3,
-    "timeouts": { "ai": 10, "piper": 10 }
+    "timeouts": { "ai": 10, "piper": 10, "pocket": 60 }
 }
 ```
 
 - `enable` is the **global master switch**. When `false`, the announce server never starts
   and guilds cannot use the feature.
+- `engine` — `"piper"` (default) or `"pocket"`. The bot reads the block of the same name for
+  that engine's URL and voice, and `timeouts.<engine>` for how long it waits on synthesis.
+  An unrecognised value logs a warning and falls back to Piper. The chosen engine is logged
+  on startup: `Announcements will be synthesised by pocket at http://…/tts`.
 - `queue_lookahead` — how many entries `@@queue_upcoming@@` and `@@recent_tracks@@` list.
-- `piper.url` — where the **bot** reaches Piper. `http://localhost:5000` if the bot runs on
-  the host with the port published; `http://piper:5000` if the bot runs in the same compose
-  network.
+- `piper.url` / `pocket.url` — where the **bot** reaches that server. `http://localhost:5000`
+  if the bot runs on the host with the port published; `http://piper:5000` if the bot runs in
+  the same compose network. Give the base URL only; `/synthesize` and `/tts` are appended.
+- `timeouts.pocket` defaults to 60 seconds rather than Piper's 10: synthesis is real
+  inference on the CPU, and the very first request also fetches the model and voice.
 - `piper.options` — optional per-request synthesis tuning, passed straight to Piper's
   `/synthesize` endpoint. Keys: `length_scale` (speed; higher = slower), `noise_scale`
   (expressiveness; lower = flatter/robotic), `length_w_scale` (cadence looseness),
@@ -110,15 +188,15 @@ downloaded automatically on first use.
 
 | From → To | Address |
 |---|---|
-| Bot (Docker, same compose network) → Piper | `http://piper:5000` |
-| Bot (host) → Piper (Docker, port published) | `http://localhost:5000` |
+| Bot (Docker, same compose network) → Piper / PocketTTS | `http://piper:5000` / `http://pocket-tts:8000` |
+| Bot (host) → Piper / PocketTTS (Docker, port published) | `http://localhost:5000` / `http://localhost:8000` |
 | Lavalink (Docker) → Bot (same compose network) | `public_url: http://<bot-service-name>:8100` (e.g. `http://vocard:8100`) |
 | Lavalink (Docker Desktop, Win/Mac) → Bot (host) | `public_url: http://host.docker.internal:8100` |
 | Lavalink (Docker on Linux) → Bot (host) | add `extra_hosts: ["host.docker.internal:host-gateway"]` to the lavalink service, then use `http://host.docker.internal:8100` |
 
 When everything (including the bot) runs in one compose stack, use the service names:
-`mongodb_url: mongodb://mongodb:27017`, node host `lavalink`, piper `http://piper:5000`,
-`public_url: http://vocard:8100`.
+`mongodb_url: mongodb://mongodb:27017`, node host `lavalink`, piper `http://piper:5000` or
+pocket `http://pocket-tts:8000`, `public_url: http://vocard:8100`.
 
 ## 3. Enable it in a guild
 
@@ -191,36 +269,49 @@ music straight away — that one needs overlay mode and a mixer-capable node.
 
 ### Changing the voice without a restart
 
-The `/piper` group retunes synthesis live — no restart, no file editing. Pair it with
+The `/piper` group retunes synthesis live — no restart, no file editing — for whichever
+engine is active (it kept the name it was born with). Pair it with
 `/settings announcetest speak:True` to hear each change immediately.
 
 ```
-/piper show                                   (defaults, this server's overrides, what's in effect)
+/piper show                                   (engine, defaults, this server's overrides, what's in effect)
 /piper set length_scale:1.15 noise_scale:0.3  (this server only — Manage Server)
 /piper set voice:en_GB-alba-medium
+/piper set voice:michael                      (PocketTTS: its 26 voices are offered as autocomplete)
 /piper reset                                  (drop this server's overrides)
 /piper default length_scale:1.05              (bot-wide — owner only)
 ```
 
+Only what the active engine can honour is accepted and shown: under PocketTTS the numeric
+knobs do not exist, so `/piper set noise_scale:0.3` changes nothing and says so rather than
+storing a setting that would never be heard.
+
 There are two layers. `/piper default` changes the bot-wide defaults for every guild; it is
 restricted to the IDs in `bot_access_user`, takes effect on the next announcement, and is
-written back into `announce_settings.piper` in `settings.json` so it survives a restart.
-`/piper set` stores an override for one server under `tts_announce.piper`, and those values
-win over the defaults key by key — a guild that sets only `length_scale` still gets the
-bot's voice and every other default.
+written back into that engine's block (`announce_settings.piper` or `announce_settings.pocket`)
+in `settings.json` so it survives a restart. `/piper set` stores an override for one server
+under `tts_announce.piper`, and those values win over the defaults key by key — a guild that
+sets only `length_scale` still gets the bot's voice and every other default.
 
-The knobs are the same ones described under `piper.options` above: `length_scale` (speed,
-higher is slower), `noise_scale` (expressiveness, lower is flatter), `length_w_scale`
-(cadence looseness) and `speaker_id` (multi-speaker models). Anything else is dropped
-before the request is built.
+Under Piper the knobs are the ones described under `piper.options` above: `length_scale`
+(speed, higher is slower), `noise_scale` (expressiveness, lower is flatter), `length_w_scale`
+(cadence looseness) and `speaker_id` (multi-speaker models). Anything else is dropped before
+the request is built. PocketTTS takes `voice` and nothing else — its speed and temperature
+are fixed when the server loads its model.
+
+Guild overrides are stored under the one `tts_announce.piper` key whichever engine is
+running, so a server that picked a voice for one engine still has it stored after the owner
+switches to the other. It is ignored rather than used — PocketTTS falls back to its default
+voice and logs why — and `/piper reset` clears it.
 
 Two caveats:
 
-- **`voice` has to exist on the Piper server.** `python -m piper.http_server` is started
-  with one `-m` model and reads from `--data-dir`; a voice that was never downloaded there
-  cannot be selected from Discord. Fetch it into the Piper volume first
+- **`voice` has to exist on the server.** `python -m piper.http_server` is started with one
+  `-m` model and reads from `--data-dir`; a voice that was never downloaded there cannot be
+  selected from Discord. Fetch it into the Piper volume first
   (`python -m piper.download_voices <name>`). The numeric knobs are per-request and always
-  work.
+  work. PocketTTS has its 26 voices built in and offers them as autocomplete, so this only
+  bites there if you point `voice` at a URL it cannot fetch.
 - **`/piper default` rewrites `settings.json`.** It goes through the same `update_json`
   helper the version stamp uses, which re-serialises the whole file at 4-space indent, so
   any hand-formatting in that file is reflowed.
@@ -313,7 +404,7 @@ The default stack (`docker-compose.dev.yml`) uses NodeLink, and `settings.docker
 | `tail_seconds` | music that keeps playing after the announcement finishes |
 
 **The announcement always lands in the same place.** Generation is done in the background from
-the halfway point of the song, so however long the AI and Piper take, the speaking slot is
+the halfway point of the song, so however long the AI and the TTS server take, the speaking slot is
 computed purely from the clip's measured length:
 
 | When | What happens |
