@@ -135,12 +135,12 @@ services:
     container_name: vocard-pocket-tts
     restart: unless-stopped
     profiles: ["pocket"]
-    command: sh -c "pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir pocket-tts && pocket-tts serve --host 0.0.0.0 --port 8000"
+    command: sh -c "pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir pocket-tts && pocket-tts serve --host 0.0.0.0 --port 8002"
     volumes:
       # Model weights and voices, so a restart does not re-download them.
       - pocket-tts-cache:/root/.cache
     ports:
-      - "8000:8000"
+      - "8002:8002"
 
   vocard-dashboard:
     image: ghcr.io/chocomeow/vocard-dashboard:latest
