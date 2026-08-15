@@ -125,6 +125,51 @@ at a sample of the speaker instead of a name. Anything that is neither a built-i
 such a URL is ignored with a warning and the server's own default is used — that is what
 keeps a guild that had picked a Piper voice talking after the engine is switched.
 
+#### Voice cloning needs a Hugging Face token
+
+PocketTTS ships as two sets of weights, and the cloning-capable ones are gated:
+
+| Repo | What it gives you | Access |
+|---|---|---|
+| [`kyutai/pocket-tts-without-voice-cloning`](https://huggingface.co/kyutai/pocket-tts-without-voice-cloning) | the 26 built-in voices, as pre-computed embeddings | open |
+| [`kyutai/pocket-tts`](https://huggingface.co/kyutai/pocket-tts) | those **plus** conditioning on any audio you point it at | gated |
+
+`TTSModel.load_model` tries the gated weights and, on *any* failure, silently falls back to
+the open ones — no error, no warning. Cloning then fails per request with
+`ValueError: voice cloning is not supported`, while the built-in voices carry on working.
+That silence is why an unauthenticated server looks like it half-works.
+
+Don't run `hf auth login` inside the container — an interactive login is the wrong shape for
+a service that gets recreated. Do this instead:
+
+1. Open [huggingface.co/kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts) while
+   signed in and accept the conditions. Gating is automatic, so access is immediate.
+2. Create a **read** token at
+   [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
+3. Put it in `.env` as `HF_TOKEN=hf_...`. The compose files pass it to the `pocket-tts`
+   service, and `huggingface_hub` picks that variable up on its own.
+4. Recreate the container — weights are fetched once at startup, so a token added later does
+   nothing until then:
+
+   ```bash
+   docker compose -f docker-compose.dev.yml --profile pocket up -d --force-recreate pocket-tts
+   ```
+
+Check which weights it actually loaded — the cloning repo appears in the cache only if the
+token worked:
+
+```bash
+docker compose -f docker-compose.dev.yml exec pocket-tts ls /root/.cache/huggingface/hub
+```
+
+`models--kyutai--pocket-tts` means cloning is live;
+`models--kyutai--pocket-tts-without-voice-cloning` alone means it fell back.
+
+If you would rather log in interactively, `docker compose exec pocket-tts hf auth login`
+does work and the token lands in `/root/.cache/huggingface/token`, which survives restarts
+because that path is a named volume — but it is lost the moment the volume is removed, and
+it has to be redone by hand on every new host. The environment variable does not.
+
 Non-English models are chosen when the server starts, not per request:
 `pocket-tts serve --language french_24l`.
 

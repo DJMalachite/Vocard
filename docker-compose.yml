@@ -135,6 +135,10 @@ services:
     container_name: vocard-pocket-tts
     restart: unless-stopped
     profiles: ["pocket"]
+    # Voice cloning needs the gated kyutai/pocket-tts weights; without a token
+    # the server quietly falls back to the built-in voices only.
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
     command: sh -c "pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && pip install --no-cache-dir pocket-tts && pocket-tts serve --host 0.0.0.0 --port 8002"
     volumes:
       # Model weights and voices, so a restart does not re-download them.
