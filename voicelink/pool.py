@@ -77,7 +77,13 @@ class Node:
         password: str,
         identifier: str,
         secure: bool = False,
-        heartbeat: int = 30,
+        # aiohttp requires a PONG within heartbeat/2 or it kills the socket
+        # client-side. NodeLink is a single-threaded Node.js server that
+        # transcodes/mixes each TTS announcement clip synchronously, which can
+        # busy its event loop past a 15s deadline (half of the old 30s
+        # default) and made the bot tear down a perfectly healthy connection
+        # mid-song. 60s gives it a 30s pong window instead.
+        heartbeat: int = 60,
         yt_ratelimit: dict = None,
         session: Optional[aiohttp.ClientSession] = None,
         resume_key: Optional[str] = None,
@@ -395,7 +401,14 @@ class Node:
                     await player._dispatch_voice_update(player._voice_state)
 
                 if player.current:
-                    await player.play(track=player.current, start=min(player._last_position, player.current.length))
+                    # player._last_position is only as fresh as the last
+                    # playerUpdate before the socket dropped - during an
+                    # outage that can be many seconds stale, which made every
+                    # reconnect audibly rewind the track. player.position
+                    # extrapolates from elapsed time instead, matching what
+                    # _resume_after_rebuild() already does for the other
+                    # player-recovery path.
+                    await player.play(track=player.current, start=min(player.position, player.current.length))
 
                     if player.is_paused:
                         await player.set_pause(True)
@@ -549,7 +562,7 @@ class NodePool:
         password: str,
         identifier: str,
         secure: bool = False,
-        heartbeat: int = 30,
+        heartbeat: int = 60,  # see the heartbeat comment on Node.__init__
         yt_ratelimit: dict = None,
         session: Optional[aiohttp.ClientSession] = None,
         resume_key: Optional[str] = None,
