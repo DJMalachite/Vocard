@@ -133,7 +133,8 @@
             "announceTestFailed": "Nie udało się wygenerować ogłoszenia. Sprawdź logi bota.",
             "piperUpdated": "Zaktualizowano ustawienia głosu Piper: `{0}`.",
             "piperReset": "Zresetowano ustawienia głosu Piper na tym serwerze.",
-            "piperUnsupported": "`{0}` nie może zostać ustawione w silniku głosu `{1}`, więc nic nie zostało zmienione."
+            "piperUnsupported": "`{0}` nie może zostać ustawione w silniku głosu `{1}`, więc nic nie zostało zmienione.",
+            "piperVoiceUnreachable": "Nie udało się użyć `{0}` jako głosu - silnik go odrzucił lub nie mógł się z nim połączyć. Nic nie zostało zmienione."
         },
         "menu": "Ustawnienia serwera | {0}",
         "basic": {

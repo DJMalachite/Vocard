@@ -133,7 +133,8 @@
             "announceTestFailed": "Could not produce an announcement. Check the bot logs.",
             "piperUpdated": "Updated Piper voice settings: `{0}`.",
             "piperReset": "Reset this server's Piper voice settings.",
-            "piperUnsupported": "`{0}` cannot be tuned on the `{1}` voice engine, so nothing was changed."
+            "piperUnsupported": "`{0}` cannot be tuned on the `{1}` voice engine, so nothing was changed.",
+            "piperVoiceUnreachable": "Could not use `{0}` as a voice - the engine rejected it or couldn't reach it. Nothing was changed."
         },
         "menu": "Server Settings | {0}",
         "basic": {

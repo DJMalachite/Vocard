@@ -101,7 +101,10 @@ class Vocard(commands.Bot):
                     await dispatch_message(ctx, str(e), ephemeral=True)
 
                 finally:
-                    await message.delete()
+                    try:
+                        await message.delete()
+                    except discord.NotFound:
+                        pass
 
         await self.process_commands(message)
 

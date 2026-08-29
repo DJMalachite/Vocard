@@ -9,7 +9,7 @@
             "password": "youshallnotpass",
             "secure": false,
             "identifier": "DEFAULT",
-            "reconnect_strategy": "ReconnectOnDrop",
+            "reconnect_strategy": "Always",
             "yt_ratelimit": {
                 "tokens": [],
                 "config": {

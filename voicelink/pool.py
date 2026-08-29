@@ -284,10 +284,10 @@ class Node:
         elif op == "playerUpdate":
             await player._update_state(data)
 
-    async def send(self, method: RequestMethod, query: str, data: Union[dict, str] = {}) -> dict:
+    async def send(self, method: RequestMethod, query: str, data: Union[dict, str] = {}, *, warn: bool = True) -> dict:
         if not self._available:
             raise NodeNotAvailable(f"The node '{self._identifier}' is unavailable.")
-        
+
         uri: str = f"{self._rest_uri}/{NODE_VERSION}/{query}"
         async with self._session.request(
             method=method.value,
@@ -297,17 +297,26 @@ class Node:
         ) as resp:
             if resp.status >= 300:
                 body = (await resp.text())[:500]
-                self._logger.warning(
-                    f"Node [{self._identifier}] rejected {method.value.upper()} {query} "
-                    f"with status {resp.status}: {body}"
-                )
 
                 # A player the node has lost is worth telling apart from any
                 # other REST failure: the caller can rebuild it and retry
                 # instead of the guild being stuck on 404 forever.
                 if resp.status == 404 and "player not found" in body.lower():
+                    # Callers that are already cleaning up a player they know
+                    # is gone (warn=False) expect this 404 - logging it at
+                    # warning level would just be noise around a working
+                    # recovery path.
+                    if warn:
+                        self._logger.warning(
+                            f"Node [{self._identifier}] rejected {method.value.upper()} {query} "
+                            f"with status {resp.status}: {body}"
+                        )
                     raise PlayerNotFound(f"The node has no player for {query}")
 
+                self._logger.warning(
+                    f"Node [{self._identifier}] rejected {method.value.upper()} {query} "
+                    f"with status {resp.status}: {body}"
+                )
                 raise NodeException(
                     f"Getting errors from Lavalink REST api (status {resp.status})"
                 )

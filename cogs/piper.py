@@ -206,6 +206,20 @@ class Piper(commands.Cog, name="piper"):
                 ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), self._client.NAME, ephemeral=True
             )
 
+        # A custom voice is a URL the engine fetches reference audio from -
+        # unlike a built-in voice name, it can be unreachable or something the
+        # engine refuses to use. Catching that now, instead of letting every
+        # future announcement fail silently in the background, costs one real
+        # synthesis call up front.
+        client = self._client
+        url_schemes = getattr(client, "VOICE_URL_SCHEMES", ())
+        if voice and voice.startswith(url_schemes):
+            await ctx.defer()
+            if not await client.synthesize("Testing this voice.", voice=voice):
+                return await send_localized_message(
+                    ctx, "settings.actions.piperVoiceUnreachable", voice, ephemeral=True
+                )
+
         await MongoDBHandler.update_settings(
             ctx.guild.id,
             {"$set": {f"tts_announce.piper.{key}": value for key, value in updates.items()}}
@@ -270,6 +284,17 @@ class Piper(commands.Cog, name="piper"):
             return await send_localized_message(
                 ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), client.NAME, ephemeral=True
             )
+
+        # See the matching check in set() - a broken bot-wide default is worse
+        # than a broken guild override, since every guild without its own
+        # voice override inherits it.
+        url_schemes = getattr(client, "VOICE_URL_SCHEMES", ())
+        if voice and voice.startswith(url_schemes):
+            await ctx.defer()
+            if not await client.synthesize("Testing this voice.", voice=voice):
+                return await send_localized_message(
+                    ctx, "settings.actions.piperVoiceUnreachable", voice, ephemeral=True
+                )
 
         options = client.filter_options(updates)
         client.configure(voice=updates.get("voice"), options=options)

@@ -133,7 +133,8 @@
             "announceTestFailed": "Die Ansage konnte nicht erstellt werden. Prüfe die Bot-Logs.",
             "piperUpdated": "Piper-Stimmeinstellungen aktualisiert: `{0}`.",
             "piperReset": "Piper-Stimmeinstellungen dieses Servers zurückgesetzt.",
-            "piperUnsupported": "`{0}` kann bei der Sprach-Engine `{1}` nicht eingestellt werden, es wurde nichts geändert."
+            "piperUnsupported": "`{0}` kann bei der Sprach-Engine `{1}` nicht eingestellt werden, es wurde nichts geändert.",
+            "piperVoiceUnreachable": "`{0}` konnte nicht als Stimme verwendet werden - die Engine hat es abgelehnt oder konnte es nicht erreichen. Es wurde nichts geändert."
         },
         "menu": "Servereinstellungen | {0}",
         "basic": {

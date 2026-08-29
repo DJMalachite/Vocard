@@ -133,7 +133,8 @@
             "announceTestFailed": "No se pudo generar el anuncio. Revisa los registros del bot.",
             "piperUpdated": "Configuración de voz de Piper actualizada: `{0}`.",
             "piperReset": "Se restableció la configuración de voz de Piper de este servidor.",
-            "piperUnsupported": "`{0}` no se puede ajustar en el motor de voz `{1}`, así que no se cambió nada."
+            "piperUnsupported": "`{0}` no se puede ajustar en el motor de voz `{1}`, así que no se cambió nada.",
+            "piperVoiceUnreachable": "No se pudo usar `{0}` como voz: el motor la rechazó o no pudo alcanzarla. No se cambió nada."
         },
         "menu": "Configuración del servidor | {0}",
         "basic": {

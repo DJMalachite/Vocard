@@ -422,7 +422,7 @@ class Player(VoiceProtocol):
         # The stale entry has to go first: while the node still holds it, it
         # keeps answering requests with 404 instead of creating a player.
         try:
-            await self._node.send(RequestMethod.DELETE, query=self._player_uri())
+            await self._node.send(RequestMethod.DELETE, query=self._player_uri(), warn=False)
         except Exception as e:
             self._logger.debug(f"Discarding the lost player in {self.guild.id} failed, continuing anyway: {e}")
 

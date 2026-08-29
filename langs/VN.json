@@ -133,7 +133,8 @@
             "announceTestFailed": "Không thể tạo thông báo. Hãy kiểm tra nhật ký của bot.",
             "piperUpdated": "Đã cập nhật cài đặt giọng Piper: `{0}`.",
             "piperReset": "Đã đặt lại cài đặt giọng Piper của máy chủ này.",
-            "piperUnsupported": "Không thể tinh chỉnh `{0}` trên công cụ giọng nói `{1}`, nên không có gì được thay đổi."
+            "piperUnsupported": "Không thể tinh chỉnh `{0}` trên công cụ giọng nói `{1}`, nên không có gì được thay đổi.",
+            "piperVoiceUnreachable": "Không thể sử dụng `{0}` làm giọng nói - công cụ đã từ chối hoặc không thể truy cập được. Không có gì được thay đổi."
         },
         "menu": "Cài Đặt Máy Chủ | {0}",
         "basic": {

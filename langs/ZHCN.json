@@ -133,7 +133,8 @@
             "announceTestFailed": "无法生成语音播报。请检查机器人日志。",
             "piperUpdated": "已更新 Piper 语音设置：`{0}`。",
             "piperReset": "已重置本服务器的 Piper 语音设置。",
-            "piperUnsupported": "`{0}` 无法在语音引擎 `{1}` 上调整，因此未做任何更改。"
+            "piperUnsupported": "`{0}` 无法在语音引擎 `{1}` 上调整，因此未做任何更改。",
+            "piperVoiceUnreachable": "无法将 `{0}` 用作语音——引擎拒绝了它，或者无法访问它。未做任何更改。"
         },
         "menu": "服务器设置 | {0}",
         "basic": {
