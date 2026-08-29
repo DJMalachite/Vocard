@@ -75,6 +75,13 @@ if TYPE_CHECKING:
 # gone - so it is handled by rebuilding rather than reconnecting.
 WORKER_FAILED_CLOSE_CODE = 5001
 
+# How many times in a row a node loss is allowed to put the same track back
+# before giving up on it. Protects against a track that crashes the node
+# itself (rather than merely failing to load): without a limit, the node's
+# own restart and the bot's automatic resume would retry it forever in
+# lockstep, in a loop that never recovers on its own.
+MAX_TRACK_RESUME_ATTEMPTS = 3
+
 async def connect_channel(ctx: Union[commands.Context, Interaction], channel: VoiceChannel = None):
     texts = await LangHandler.get_lang(ctx.guild.id, "voice.connection.noChannel", "voice.connection.noPermission")
     try:
@@ -177,6 +184,15 @@ class Player(VoiceProtocol):
         # Set while the node-side player is being rebuilt, so the requests
         # that rebuild it cannot themselves trigger another rebuild.
         self._recovering: bool = False
+
+        # Some tracks crash the node itself (a bad stream the node's own
+        # extractor cannot handle) rather than merely failing to load. Node
+        # reconnect/rebuild paths put the current track back automatically,
+        # which would retry a node-crashing track forever in lockstep with
+        # the node's own crash loop. These track how many times in a row
+        # that has happened for the current track, so it can be given up on.
+        self._resume_track_id: Optional[str] = None
+        self._resume_attempts: int = 0
 
         self._position: int = 0
         self._last_position: int = 0
@@ -448,11 +464,59 @@ class Player(VoiceProtocol):
         finally:
             self._recovering = False
 
+    def _track_resume_allowed(self) -> bool:
+        """Whether the current track should be put back after a node loss.
+
+        Some tracks crash the node itself rather than merely failing to load
+        - the node restarts, the bot reconnects, and the automatic resume
+        puts the very same track back, which crashes it again. Counts
+        consecutive node-loss resumes of the same track and refuses once
+        MAX_TRACK_RESUME_ATTEMPTS is hit; a genuine TrackStartEvent for the
+        track resets the count, since that proves it actually played.
+        """
+        track_id = self._current.track_id if self._current else None
+        if track_id != self._resume_track_id:
+            self._resume_track_id = track_id
+            self._resume_attempts = 0
+        self._resume_attempts += 1
+        return self._resume_attempts <= MAX_TRACK_RESUME_ATTEMPTS
+
+    async def _abandon_current_after_failed_resumes(self) -> None:
+        """Gives up on a track that keeps failing to survive a node recovery.
+
+        Skips it instead of retrying it forever, and tells the channel why
+        the song vanished rather than leaving it a silent mystery.
+        """
+        track = self._current
+        self._logger.warning(
+            f"Giving up on {track.title if track else 'the current track'} in "
+            f"{self.guild.name}({self.guild.id}) after {self._resume_attempts} node losses in a row; "
+            "skipping it."
+        )
+        self._current = None
+        self._resume_track_id = None
+        self._resume_attempts = 0
+
+        if track and self.context:
+            try:
+                await self.context.send(
+                    f"Couldn't keep **{track.title}** playing - the audio node kept failing on it. "
+                    "Skipping to the next track.",
+                    delete_after=15
+                )
+            except Exception:
+                pass
+
+        await self.do_next()
+
     async def _resume_after_rebuild(self) -> None:
         """Puts the current track back on a freshly rebuilt player."""
         track, position = self._current, self.position
         if not track:
             return
+
+        if not self._track_resume_allowed():
+            return await self._abandon_current_after_failed_resumes()
 
         self._logger.info(
             f"Resuming {track.title} in {self.guild.name}({self.guild.id}) at "
@@ -577,6 +641,12 @@ class Player(VoiceProtocol):
         if isinstance(event, TrackStartEvent):
             self._ending_track = self._current
             self._playback_started.set()
+
+            # The node just confirmed it actually started this track, so
+            # whatever node losses happened earlier trying to get here were
+            # resolved rather than caused by the track itself.
+            self._resume_track_id = None
+            self._resume_attempts = 0
 
             # A real song started (during a clip, _pending_track is set):
             # count it towards the announcement frequency and begin watching

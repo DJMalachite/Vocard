@@ -39,7 +39,15 @@ services:
         condition: service_started
 
   nodelink:
-    image: performanc/nodelink:3.8.0
+    # Built from NodeLink's dev branch rather than the published 3.8.0 image:
+    # dev has fixes not yet in a release, including the SABR recovery crash
+    # that was taking this container down. Pinned to a commit so rebuilds are
+    # reproducible - bump the ref to pick up newer dev commits, or point it
+    # back at `image: performanc/nodelink:3.8.0` to go back to the release.
+    build:
+      context: https://github.com/PerformanC/NodeLink.git#351f5c0080610e2f0a4cc02ca2e15be5e5e90401
+      dockerfile: Dockerfile
+    image: vocard-nodelink:dev-351f5c0
     container_name: vocard-nodelink
     restart: unless-stopped
     environment:

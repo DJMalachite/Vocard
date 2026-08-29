@@ -410,6 +410,13 @@ class Node:
                     await player._dispatch_voice_update(player._voice_state)
 
                 if player.current:
+                    if not player._track_resume_allowed():
+                        # This track has crashed the node on every attempt to
+                        # play it - putting it back would just feed the same
+                        # loop again. Skip it instead of retrying forever.
+                        await player._abandon_current_after_failed_resumes()
+                        continue
+
                     # player._last_position is only as fresh as the last
                     # playerUpdate before the socket dropped - during an
                     # outage that can be many seconds stale, which made every
