@@ -134,7 +134,11 @@
             "piperUpdated": "Piper-Stimmeinstellungen aktualisiert: `{0}`.",
             "piperReset": "Piper-Stimmeinstellungen dieses Servers zurückgesetzt.",
             "piperUnsupported": "`{0}` kann bei der Sprach-Engine `{1}` nicht eingestellt werden, es wurde nichts geändert.",
-            "piperVoiceUnreachable": "`{0}` konnte nicht als Stimme verwendet werden - die Engine hat es abgelehnt oder konnte es nicht erreichen. Es wurde nichts geändert."
+            "piperVoiceUnreachable": "`{0}` konnte nicht als Stimme verwendet werden - die Engine hat es abgelehnt oder konnte es nicht erreichen. Es wurde nichts geändert.",
+            "piperVoiceFileUnsupported": "`{0}` kann keine Stimme aus einer hochgeladenen Datei klonen. Es wurde nichts geändert.",
+            "piperVoiceFileInvalid": "Dieser Anhang ist keine lesbare WAV-Datei. Lade einen kurzen, sauberen .wav-Clip der zu klonenden Stimme hoch.",
+            "piperVoiceFileTooLarge": "Diese Datei ist zu groß für ein Stimmenmuster - halte sie unter {0} MB.",
+            "piperVoiceFileTooLong": "Dieser Clip ist zu lang für ein Stimmenmuster - halte ihn unter {0} Sekunden."
         },
         "menu": "Servereinstellungen | {0}",
         "basic": {

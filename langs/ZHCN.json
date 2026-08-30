@@ -134,7 +134,11 @@
             "piperUpdated": "已更新 Piper 语音设置：`{0}`。",
             "piperReset": "已重置本服务器的 Piper 语音设置。",
             "piperUnsupported": "`{0}` 无法在语音引擎 `{1}` 上调整，因此未做任何更改。",
-            "piperVoiceUnreachable": "无法将 `{0}` 用作语音——引擎拒绝了它，或者无法访问它。未做任何更改。"
+            "piperVoiceUnreachable": "无法将 `{0}` 用作语音——引擎拒绝了它，或者无法访问它。未做任何更改。",
+            "piperVoiceFileUnsupported": "`{0}` 无法从上传的文件克隆语音。未做任何更改。",
+            "piperVoiceFileInvalid": "该附件不是可读取的 WAV 文件。请上传一段简短、清晰的 .wav 声音片段用于克隆。",
+            "piperVoiceFileTooLarge": "该文件作为语音样本过大——请保持在 {0} MB 以下。",
+            "piperVoiceFileTooLong": "该片段作为语音样本过长——请保持在 {0} 秒以下。"
         },
         "menu": "服务器设置 | {0}",
         "basic": {

@@ -134,7 +134,11 @@
             "piperUpdated": "已更新 Piper 語音設定：`{0}`。",
             "piperReset": "已重設本伺服器的 Piper 語音設定。",
             "piperUnsupported": "`{0}` 無法在語音引擎 `{1}` 上調整，因此未做任何變更。",
-            "piperVoiceUnreachable": "無法將 `{0}` 用作語音——引擎拒絕了它，或者無法存取它。未做任何變更。"
+            "piperVoiceUnreachable": "無法將 `{0}` 用作語音——引擎拒絕了它，或者無法存取它。未做任何變更。",
+            "piperVoiceFileUnsupported": "`{0}` 無法從上傳的檔案複製語音。未做任何變更。",
+            "piperVoiceFileInvalid": "該附件不是可讀取的 WAV 檔案。請上傳一段簡短、清晰的 .wav 聲音片段用於複製。",
+            "piperVoiceFileTooLarge": "該檔案作為語音樣本過大——請保持在 {0} MB 以下。",
+            "piperVoiceFileTooLong": "該片段作為語音樣本過長——請保持在 {0} 秒以下。"
         },
         "menu": "伺服器設定 | {0}",
         "basic": {

@@ -134,7 +134,11 @@
             "piperUpdated": "Piper 음성 설정이 업데이트되었습니다: `{0}`",
             "piperReset": "이 서버의 Piper 음성 설정을 초기화했습니다.",
             "piperUnsupported": "`{0}`은(는) 음성 엔진 `{1}`에서 설정할 수 없어 아무것도 변경되지 않았습니다.",
-            "piperVoiceUnreachable": "`{0}`을(를) 음성으로 사용할 수 없습니다. 엔진이 거부했거나 접근할 수 없습니다. 아무것도 변경되지 않았습니다."
+            "piperVoiceUnreachable": "`{0}`을(를) 음성으로 사용할 수 없습니다. 엔진이 거부했거나 접근할 수 없습니다. 아무것도 변경되지 않았습니다.",
+            "piperVoiceFileUnsupported": "`{0}`은(는) 업로드한 파일로 음성을 복제할 수 없습니다. 아무것도 변경되지 않았습니다.",
+            "piperVoiceFileInvalid": "첨부 파일이 읽을 수 있는 WAV 파일이 아닙니다. 복제할 목소리의 짧고 깨끗한 .wav 클립을 업로드하세요.",
+            "piperVoiceFileTooLarge": "해당 파일은 음성 샘플로 사용하기에 너무 큽니다 - {0}MB 미만으로 유지하세요.",
+            "piperVoiceFileTooLong": "해당 클립은 음성 샘플로 사용하기에 너무 깁니다 - {0}초 미만으로 유지하세요."
         },
         "menu": "서버 설정 | {0}",
         "basic": {

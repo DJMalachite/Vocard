@@ -134,7 +134,11 @@
             "piperUpdated": "Configuración de voz de Piper actualizada: `{0}`.",
             "piperReset": "Se restableció la configuración de voz de Piper de este servidor.",
             "piperUnsupported": "`{0}` no se puede ajustar en el motor de voz `{1}`, así que no se cambió nada.",
-            "piperVoiceUnreachable": "No se pudo usar `{0}` como voz: el motor la rechazó o no pudo alcanzarla. No se cambió nada."
+            "piperVoiceUnreachable": "No se pudo usar `{0}` como voz: el motor la rechazó o no pudo alcanzarla. No se cambió nada.",
+            "piperVoiceFileUnsupported": "`{0}` no puede clonar una voz a partir de un archivo subido. No se cambió nada.",
+            "piperVoiceFileInvalid": "Ese archivo adjunto no es un WAV legible. Sube un clip .wav corto y limpio de la voz a clonar.",
+            "piperVoiceFileTooLarge": "Ese archivo es demasiado grande para una muestra de voz - mantenlo por debajo de {0} MB.",
+            "piperVoiceFileTooLong": "Ese clip es demasiado largo para una muestra de voz - mantenlo por debajo de {0} segundos."
         },
         "menu": "Configuración del servidor | {0}",
         "basic": {

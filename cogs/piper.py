@@ -21,6 +21,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
+from typing import Optional
+
 import discord
 import voicelink
 import function as func
@@ -33,7 +35,7 @@ from function import (
 )
 
 from voicelink import MongoDBHandler, LangHandler
-from voicelink.announcer import TTSClient
+from voicelink.announcer import TTSClient, wav_duration_ms
 from voicelink.utils import dispatch_message, send_localized_message
 
 # Applied by the bot to the finished clip rather than sent to the engine, so it
@@ -41,6 +43,14 @@ from voicelink.utils import dispatch_message, send_localized_message
 _LOUDNESS: str = "loudness"
 
 _LOUDNESS_HELP: str = "Boost quiet clips up to this % of full volume. 0 keeps the engine's own level."
+
+_VOICE_FILE_HELP: str = "PocketTTS only. Upload a short WAV clip to clone that voice instead of naming one."
+
+# A cloning reference only needs a few seconds of clean speech; capping both
+# keeps uploads quick to fetch and small enough to hand straight to the
+# engine's own store.
+_MAX_VOICE_BYTES: int = 5 * 1024 * 1024
+_MAX_VOICE_SECONDS: int = 20
 
 
 class Piper(commands.Cog, name="piper"):
@@ -108,6 +118,42 @@ class Piper(commands.Cog, name="piper"):
         keys = self._keys(self._client)
         return [key for key in updates if key not in keys]
 
+    async def _save_voice_upload(
+        self,
+        ctx: commands.Context,
+        attachment: discord.Attachment,
+        key: str
+    ) -> Optional[str]:
+        """Downloads and validates an uploaded voice-cloning reference clip.
+
+        Returns the URL the engine can fetch it from, or None after already
+        replying with why the upload was rejected.
+        """
+        client = self._client
+        if not getattr(client, "VOICE_URL_SCHEMES", None):
+            await send_localized_message(ctx, "settings.actions.piperVoiceFileUnsupported", client.NAME, ephemeral=True)
+            return None
+
+        if attachment.size > _MAX_VOICE_BYTES:
+            await send_localized_message(
+                ctx, "settings.actions.piperVoiceFileTooLarge", _MAX_VOICE_BYTES // (1024 * 1024), ephemeral=True
+            )
+            return None
+
+        wav = await attachment.read()
+        duration = wav_duration_ms(wav)
+        if duration is None:
+            await send_localized_message(ctx, "settings.actions.piperVoiceFileInvalid", ephemeral=True)
+            return None
+
+        if duration > _MAX_VOICE_SECONDS * 1000:
+            await send_localized_message(
+                ctx, "settings.actions.piperVoiceFileTooLong", _MAX_VOICE_SECONDS, ephemeral=True
+            )
+            return None
+
+        return self._announcer.save_voice_sample(key, wav)
+
     def _global_settings(self) -> dict:
         """The bot-wide defaults, read from the live client rather than the file.
 
@@ -174,6 +220,7 @@ class Piper(commands.Cog, name="piper"):
     @piper.command(name="set", aliases=get_aliases("set"))
     @app_commands.describe(
         voice="Voice name, e.g. en_US-lessac-medium (Piper) or alba (PocketTTS).",
+        voice_file=_VOICE_FILE_HELP,
         loudness=_LOUDNESS_HELP,
         length_scale="Piper only. Speaking speed. Higher is slower. 1.0 is the model default.",
         noise_scale="Piper only. Expressiveness. Lower is flatter and more robotic.",
@@ -187,6 +234,7 @@ class Piper(commands.Cog, name="piper"):
         self,
         ctx: commands.Context,
         voice: str = None,
+        voice_file: discord.Attachment = None,
         loudness: commands.Range[int, 0, 100] = None,
         length_scale: commands.Range[float, 0.1, 3.0] = None,
         noise_scale: commands.Range[float, 0.0, 1.0] = None,
@@ -197,13 +245,23 @@ class Piper(commands.Cog, name="piper"):
         if not self._announcer:
             return await send_localized_message(ctx, "settings.actions.announceNotConfigured", ephemeral=True)
 
+        client = self._client
+        url_schemes = getattr(client, "VOICE_URL_SCHEMES", ())
+        if voice_file or (voice and voice.startswith(url_schemes)):
+            await ctx.defer()
+
+        if voice_file:
+            voice = await self._save_voice_upload(ctx, voice_file, f"guild-{ctx.guild.id}")
+            if voice is None:
+                return
+
         updates = self._collect(voice, loudness, length_scale, noise_scale, length_w_scale, speaker_id)
         if not updates:
             return await self.show(ctx)
 
         if unsupported := self._unsupported(updates):
             return await send_localized_message(
-                ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), self._client.NAME, ephemeral=True
+                ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), client.NAME, ephemeral=True
             )
 
         # A custom voice is a URL the engine fetches reference audio from -
@@ -211,10 +269,7 @@ class Piper(commands.Cog, name="piper"):
         # engine refuses to use. Catching that now, instead of letting every
         # future announcement fail silently in the background, costs one real
         # synthesis call up front.
-        client = self._client
-        url_schemes = getattr(client, "VOICE_URL_SCHEMES", ())
         if voice and voice.startswith(url_schemes):
-            await ctx.defer()
             if not await client.synthesize("Testing this voice.", voice=voice):
                 return await send_localized_message(
                     ctx, "settings.actions.piperVoiceUnreachable", voice, ephemeral=True
@@ -250,6 +305,7 @@ class Piper(commands.Cog, name="piper"):
     @piper.command(name="default", aliases=get_aliases("default"))
     @app_commands.describe(
         voice="Voice name, e.g. en_US-lessac-medium (Piper) or alba (PocketTTS).",
+        voice_file=_VOICE_FILE_HELP,
         loudness=_LOUDNESS_HELP,
         length_scale="Piper only. Speaking speed. Higher is slower. 1.0 is the model default.",
         noise_scale="Piper only. Expressiveness. Lower is flatter and more robotic.",
@@ -262,6 +318,7 @@ class Piper(commands.Cog, name="piper"):
         self,
         ctx: commands.Context,
         voice: str = None,
+        voice_file: discord.Attachment = None,
         loudness: commands.Range[int, 0, 100] = None,
         length_scale: commands.Range[float, 0.1, 3.0] = None,
         noise_scale: commands.Range[float, 0.0, 1.0] = None,
@@ -275,11 +332,20 @@ class Piper(commands.Cog, name="piper"):
         if not self._announcer:
             return await send_localized_message(ctx, "settings.actions.announceNotConfigured", ephemeral=True)
 
+        client = self._client
+        url_schemes = getattr(client, "VOICE_URL_SCHEMES", ())
+        if voice_file or (voice and voice.startswith(url_schemes)):
+            await ctx.defer()
+
+        if voice_file:
+            voice = await self._save_voice_upload(ctx, voice_file, "default")
+            if voice is None:
+                return
+
         updates = self._collect(voice, loudness, length_scale, noise_scale, length_w_scale, speaker_id)
         if not updates:
             return await self.show(ctx)
 
-        client = self._client
         if unsupported := self._unsupported(updates):
             return await send_localized_message(
                 ctx, "settings.actions.piperUnsupported", ", ".join(unsupported), client.NAME, ephemeral=True
@@ -288,9 +354,7 @@ class Piper(commands.Cog, name="piper"):
         # See the matching check in set() - a broken bot-wide default is worse
         # than a broken guild override, since every guild without its own
         # voice override inherits it.
-        url_schemes = getattr(client, "VOICE_URL_SCHEMES", ())
         if voice and voice.startswith(url_schemes):
-            await ctx.defer()
             if not await client.synthesize("Testing this voice.", voice=voice):
                 return await send_localized_message(
                     ctx, "settings.actions.piperVoiceUnreachable", voice, ephemeral=True

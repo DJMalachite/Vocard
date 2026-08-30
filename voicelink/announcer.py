@@ -54,6 +54,16 @@ MIXER_CHANNELS = 2
 MIXER_SAMPLE_WIDTH = 2
 MIXER_FRAME_BYTES = 3840
 
+# Bot root, not voicelink/ - where an uploaded voice-cloning reference clip
+# lands on disk. Computed locally rather than imported from function.py to
+# avoid a circular import (function.py imports voicelink at module level).
+DEFAULT_VOICE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voice_samples")
+
+
+def safe_voice_key(key: str) -> str:
+    """Strips a voice-sample key down to what's safe as a filename and URL segment."""
+    return "".join(c for c in key if c.isalnum() or c in "-_") or "voice"
+
 
 def repair_wav_header(wav: bytes) -> bytes:
     """Rewrites the RIFF/data sizes of a WAV to match how many bytes arrived.
@@ -302,19 +312,24 @@ class AnnounceServer:
     the URL more than once (probe during loadtracks, then playback).
     """
 
-    def __init__(self, host: str, port: int, public_url: str, ttl: int = 300):
+    def __init__(self, host: str, port: int, public_url: str, ttl: int = 300, voice_dir: str = DEFAULT_VOICE_DIR):
         self._host: str = host
         self._port: int = port
         self._public_url: str = public_url.rstrip("/")
         self._ttl: int = ttl
         self._store: dict[str, tuple[bytes, float]] = {}
+        self._voice_dir: str = voice_dir
         self._runner: Optional[web.AppRunner] = None
         self._sweeper: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
+        os.makedirs(self._voice_dir, exist_ok=True)
+
         app = web.Application()
         app.router.add_route("GET", "/announce/{token}", self._handle)
         app.router.add_route("HEAD", "/announce/{token}", self._handle)
+        app.router.add_route("GET", "/voices/{key}", self._handle_voice)
+        app.router.add_route("HEAD", "/voices/{key}", self._handle_voice)
         self._runner = web.AppRunner(app)
         await self._runner.setup()
         await web.TCPSite(self._runner, self._host, self._port).start()
@@ -334,6 +349,25 @@ class AnnounceServer:
         token = uuid.uuid4().hex
         self._store[token] = (wav, time.time())
         return f"{self._public_url}/announce/{token}.wav"
+
+    def save_voice_sample(self, key: str, wav: bytes) -> str:
+        """Persists an uploaded voice-cloning reference clip and returns its URL.
+
+        Unlike `put`, this writes to disk rather than the in-memory TTL store:
+        the whole point of cloning a voice from an upload, rather than a URL,
+        is that a guild shouldn't have to re-upload it after every restart.
+        """
+        path = os.path.join(self._voice_dir, f"{safe_voice_key(key)}.wav")
+        with open(path, "wb") as f:
+            f.write(wav)
+        return f"{self._public_url}/voices/{safe_voice_key(key)}.wav"
+
+    async def _handle_voice(self, request: web.Request) -> web.Response:
+        key = safe_voice_key(request.match_info["key"].removesuffix(".wav"))
+        path = os.path.join(self._voice_dir, f"{key}.wav")
+        if not os.path.isfile(path):
+            return web.Response(status=404)
+        return web.FileResponse(path, headers={"Accept-Ranges": "bytes"})
 
     async def _handle(self, request: web.Request) -> web.Response:
         """Serves a clip, honouring Range requests.
@@ -747,6 +781,11 @@ class Announcer:
     def tts(self) -> TTSClient:
         """The synthesis client, so its defaults can be retuned at runtime."""
         return self._tts
+
+    def save_voice_sample(self, key: str, wav: bytes) -> str:
+        """Persists an uploaded voice-cloning reference clip, returning the URL a
+        cloning-capable engine can fetch it from."""
+        return self._server.save_voice_sample(key, wav)
 
     @property
     def loudness(self) -> int:

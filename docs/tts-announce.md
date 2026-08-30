@@ -125,6 +125,31 @@ at a sample of the speaker instead of a name. Anything that is neither a built-i
 such a URL is ignored with a warning and the server's own default is used — that is what
 keeps a guild that had picked a Piper voice talking after the engine is switched.
 
+#### Cloning from an uploaded WAV instead of a URL
+
+`/piper set voice_file:<attachment>` (and `/piper default voice_file:<attachment>` for the
+bot owner) skip the URL entirely — attach a short, clean `.wav` clip of the voice to clone
+and the bot handles the rest. There's no need to host the sample anywhere yourself or point
+at a random download:
+
+```
+/piper set voice_file:my-voice.wav
+```
+
+The bot validates the attachment (a readable WAV, under 5 MB and 20 seconds), saves it to
+`voice_samples/` next to the bot's own files, and serves it back out through the same HTTP
+server that hands Lavalink its generated announcement clips — so PocketTTS fetches it exactly
+like it would a URL, from `<server.public_url>/voices/guild-<id>.wav` (or `.../default.wav`
+for the bot-wide default). That's why `server.public_url` has to be reachable from wherever
+PocketTTS itself runs, same as it already needs to be reachable from Lavalink — see
+[Networking](#networking).
+
+Because the file lands under the bot's own directory, it survives restarts the same way
+`settings.json` does, and only PocketTTS (or any future engine with `VOICE_URL_SCHEMES`) can
+accept one — Piper rejects the attachment with an explanation rather than silently ignoring it.
+`/piper reset` and `/piper set voice:<built-in name>` both stop using the uploaded clip, but the
+file itself is left on disk in case you want it back.
+
 #### Voice cloning needs a Hugging Face token
 
 PocketTTS ships as two sets of weights, and the cloning-capable ones are gated:
@@ -455,6 +480,10 @@ support `@@variables@@`, and both fall back to `default_ai_persona` / `default_a
 - The player's active audio filters (nightcore, etc.) also apply to the announcement clip.
 - Generated clips are held in memory for a few minutes and served only to hosts that can
   reach the announce port; don't expose the port publicly.
+- Uploaded voice-cloning samples (`/piper set voice_file:` / `/piper default voice_file:`)
+  are the exception: they're written to `voice_samples/` on disk and served indefinitely from
+  there, same access restriction as above — they're only reachable by hosts that can reach
+  the announce port.
 
 ## Overlay mode (NodeLink)
 

@@ -134,7 +134,11 @@
             "piperUpdated": "Đã cập nhật cài đặt giọng Piper: `{0}`.",
             "piperReset": "Đã đặt lại cài đặt giọng Piper của máy chủ này.",
             "piperUnsupported": "Không thể tinh chỉnh `{0}` trên công cụ giọng nói `{1}`, nên không có gì được thay đổi.",
-            "piperVoiceUnreachable": "Không thể sử dụng `{0}` làm giọng nói - công cụ đã từ chối hoặc không thể truy cập được. Không có gì được thay đổi."
+            "piperVoiceUnreachable": "Không thể sử dụng `{0}` làm giọng nói - công cụ đã từ chối hoặc không thể truy cập được. Không có gì được thay đổi.",
+            "piperVoiceFileUnsupported": "`{0}` không thể nhân bản giọng nói từ tệp đã tải lên. Không có gì được thay đổi.",
+            "piperVoiceFileInvalid": "Tệp đính kèm đó không phải là tệp WAV có thể đọc được. Hãy tải lên một đoạn .wav ngắn, rõ ràng của giọng nói cần nhân bản.",
+            "piperVoiceFileTooLarge": "Tệp đó quá lớn để làm mẫu giọng nói - hãy giữ dưới {0} MB.",
+            "piperVoiceFileTooLong": "Đoạn đó quá dài để làm mẫu giọng nói - hãy giữ dưới {0} giây."
         },
         "menu": "Cài Đặt Máy Chủ | {0}",
         "basic": {

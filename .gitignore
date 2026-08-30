@@ -178,4 +178,5 @@ cython_debug/
 settings.json
 logs
 dashboard/settings.json
+voice_samples/
 

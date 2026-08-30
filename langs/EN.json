@@ -134,7 +134,11 @@
             "piperUpdated": "Updated Piper voice settings: `{0}`.",
             "piperReset": "Reset this server's Piper voice settings.",
             "piperUnsupported": "`{0}` cannot be tuned on the `{1}` voice engine, so nothing was changed.",
-            "piperVoiceUnreachable": "Could not use `{0}` as a voice - the engine rejected it or couldn't reach it. Nothing was changed."
+            "piperVoiceUnreachable": "Could not use `{0}` as a voice - the engine rejected it or couldn't reach it. Nothing was changed.",
+            "piperVoiceFileUnsupported": "`{0}` cannot clone a voice from an uploaded file. Nothing was changed.",
+            "piperVoiceFileInvalid": "That attachment isn't a readable WAV file. Upload a short, clean .wav clip of the voice to clone.",
+            "piperVoiceFileTooLarge": "That file is too big for a voice sample - keep it under {0} MB.",
+            "piperVoiceFileTooLong": "That clip is too long for a voice sample - keep it under {0} seconds."
         },
         "menu": "Server Settings | {0}",
         "basic": {
