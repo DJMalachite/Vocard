@@ -131,6 +131,7 @@
             "announcePreview": "알림 미리보기:\n```{0}```",
             "announceSpoken": "해당 알림을 지금 재생합니다.",
             "announceTestFailed": "알림을 생성하지 못했습니다. 봇 로그를 확인하세요.",
+            "announcePersonaUnknown": "`{0}`은(는) 페르소나 라이브러리에 없습니다. 사용 가능: {1}",
             "piperUpdated": "Piper 음성 설정이 업데이트되었습니다: `{0}`",
             "piperReset": "이 서버의 Piper 음성 설정을 초기화했습니다.",
             "piperUnsupported": "`{0}`은(는) 음성 엔진 `{1}`에서 설정할 수 없어 아무것도 변경되지 않았습니다.",

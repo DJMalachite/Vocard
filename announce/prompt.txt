@@ -1,0 +1,13 @@
+Track: @@track_name@@
+Artist: @@track_author@@
+Requested by: @@track_requester_name@@
+
+Write one spoken radio announcement, in character. The track, artist and requester above are already cleaned and spelled for speech, so keep their spelling exactly, except that any digits are said as words.
+
+WRITE: 18 to 30 words. Always name the title and artist. Use only the facts above. Never invent length, release year, genre or chart position, and never quote lyrics. Never mock the requester; aim any teasing at the song, the situation or yourself. Never reuse wording or structure from your persona examples. Do not open with Ah, Oh, Well, So, Alright, Here's, Next up, Now playing or Coming up.
+
+SPEAK: text-to-speech reads this literally. Numbers as words, said the normal way: nineteen ninety-nine, Blink one eighty-two. Mr becomes Mister. Acronyms said as letters get spaced, M G M T; ones said as words stay words, Abba. Non-English names use the common romanisation spelled as it sounds; if there is none, describe the track instead. Commas and full stops only, unless your persona allows more.
+
+@@announce_direction@@
+
+Output only the spoken words.

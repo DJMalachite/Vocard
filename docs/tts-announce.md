@@ -474,6 +474,79 @@ them keeps the character stable while you iterate on the instruction. `temperatu
 0.0 (predictable) to 2.0 (chaotic); around 0.8–1.2 is a good range for radio patter. Both
 support `@@variables@@`, and both fall back to `default_ai_persona` / `default_ai_prompt`.
 
+### Persona library and variety
+
+Left to itself the model repeats. Each call is stateless, and a prompt that picks the angle
+from the title's first letter gives the same track (or any title with the same initial) the
+same joke every time. So the bot chooses the angle, remembers recent lines, and checks what
+comes back before it is spoken.
+
+```
+/settings announce mode:AI persona_key:frieren
+/settings announce persona_key:none          (back to the free-text persona and ai_prompt)
+```
+
+`persona_key` autocompletes from `announce/personas/*.json`. A library persona replaces both
+`persona` and `ai_prompt`: its prose is the system message, and the shared
+`announce/prompt.txt` is the task. The files are re-read when they change, with no restart.
+
+```json
+{
+    "name": "Frieren",
+    "persona": "You are Frieren, ... # Angles ... 1. ... 5. ...",
+    "angles": [
+        { "label": "Your own habits or your party", "subjects": ["Fern scolding you", "Stark", "mimics"] }
+    ],
+    "never_say": ["fleeting", "vibes"],
+    "words": [18, 30],
+    "fallback": "@@track_name@@ by @@track_author@@. I suppose that is fine."
+}
+```
+
+Each announcement works like this:
+
+1. **Normalise.** The title and artist are cleaned in code: channel tags, `(Official Video)`,
+   `[Lyrics]` and hashtags are removed, `Artist - Song` uploads are split, and `feat.`, `&` and
+   `vs.` are expanded. Then names go through `announce/pronunciations.json`, an exact,
+   case-insensitive map such as `"HVRR": "H V R R"` or `"djmalachite": "DJ Malakite"`.
+   Anything not in the map is left as it is. Requester usernames lose underscores,
+   trailing digits and decorations, and a name a voice cannot say becomes "a listener".
+2. **Choose.** An angle is drawn at random, never one of that persona's last two in the guild,
+   and so is a subject inside it and a shape (`announce/shapes.json`, never the last one).
+   They go into the prompt's `@@announce_direction@@` slot with the last 6 lines that persona
+   said in the guild, under the instruction not to reuse them.
+3. **Check.** The reply has quotes, dashes, brackets, markdown and emoji removed. It is then
+   rejected if it:
+   - is outside the persona's word range,
+   - leaves out the title or artist,
+   - opens with Ah, Oh, Well, So, Alright, Here's, Next up, Now playing or Coming up,
+   - uses a `never_say` phrase,
+   - opens with the same five words as one of that persona's recent lines, or
+   - is more than `similarity` alike to any of the guild's last 20, once title and artist
+     are taken out.
+4. **Retry once** with the reason attached. A second failure speaks the persona's `fallback`
+   instead of making a third call.
+
+Every generation logs one line. Every rejection logs a warning with its reason. Watch these
+to tune a persona or the threshold:
+
+```
+Announcement for guild 917…: persona=frieren angle=3 subject=a grimoire you traded for shape=2 attempts=1 outcome=model
+Rejected announcement for guild 917… (frieren, attempt 1): it opened the same way as a recent announcement. Text: …
+```
+
+A free-text persona still gets the history, normalisation, clean-up and checks, with a looser
+5–40 word range. It gets no angle selection, because the bot cannot see its angles.
+
+History is per guild and kept in memory, so a restart forgets it. The text for a track is also
+reused for `reuse_seconds`, so a pre-generated clip that is thrown away and rebuilt (after a skip
+or reconnect) does not pay for a second generation. `/settings announcetest` always makes a
+new one. All of it is tunable globally:
+
+```json
+"variety": { "history_size": 20, "history_shown": 6, "similarity": 0.6, "reuse_seconds": 45 }
+```
+
 ## Notes & limitations
 
 - With repeat-track mode on, the song is re-announced on every loop.

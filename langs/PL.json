@@ -131,6 +131,7 @@
             "announcePreview": "Podgląd ogłoszenia:\n```{0}```",
             "announceSpoken": "Odtwarzanie tego ogłoszenia teraz.",
             "announceTestFailed": "Nie udało się wygenerować ogłoszenia. Sprawdź logi bota.",
+            "announcePersonaUnknown": "`{0}` nie istnieje w bibliotece person. Dostępne: {1}",
             "piperUpdated": "Zaktualizowano ustawienia głosu Piper: `{0}`.",
             "piperReset": "Zresetowano ustawienia głosu Piper na tym serwerze.",
             "piperUnsupported": "`{0}` nie może zostać ustawione w silniku głosu `{1}`, więc nic nie zostało zmienione.",

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import array
 import asyncio
+import hashlib
 import io
 import logging
 import os
@@ -40,6 +41,18 @@ from typing import TYPE_CHECKING, Optional
 
 from .placeholders import PlayerPlaceholder
 from .spotify import SpotifyGenreClient
+from . import announce_text
+from .announce_text import (
+    AnnouncementHistory,
+    Normaliser,
+    Persona,
+    PersonaLibrary,
+    Spoken,
+    clean_for_tts,
+    pick_direction,
+    recent_block,
+    validate
+)
 
 if TYPE_CHECKING:
     from .player import Player
@@ -777,6 +790,22 @@ class Announcer:
         # produce has to be added here or not at all.
         self._loudness: int = as_percent(settings.get("loudness"), 95)
 
+        # What keeps AI mode from saying the same thing twice: a memory of
+        # recent lines, a persona library the angle is drawn from in code, and
+        # the normaliser that settles every name before the model sees it.
+        variety = settings.get("variety") or {}
+        library_dir = variety.get("library_dir") or announce_text.DEFAULT_LIBRARY_DIR
+        self._history = AnnouncementHistory(int(variety.get("history_size", announce_text.HISTORY_SIZE)))
+        self._history_shown: int = int(variety.get("history_shown", announce_text.HISTORY_SHOWN))
+        self._similarity: float = float(variety.get("similarity", announce_text.SIMILARITY_LIMIT))
+        self._personas = PersonaLibrary(library_dir)
+        self._normaliser = Normaliser(library_dir)
+        # (guild, track, persona) -> (text, created). A pre-generated clip that
+        # gets thrown away and rebuilt moments later reuses its text instead
+        # of paying for a second generation.
+        self._recent_text: dict[tuple, tuple[str, float]] = {}
+        self._recent_text_ttl: float = float(variety.get("reuse_seconds", 45))
+
     @property
     def tts(self) -> TTSClient:
         """The synthesis client, so its defaults can be retuned at runtime."""
@@ -786,6 +815,11 @@ class Announcer:
         """Persists an uploaded voice-cloning reference clip, returning the URL a
         cloning-capable engine can fetch it from."""
         return self._server.save_voice_sample(key, wav)
+
+    @property
+    def personas(self) -> PersonaLibrary:
+        """The persona library, for listing and autocomplete."""
+        return self._personas
 
     @property
     def loudness(self) -> int:
@@ -808,25 +842,29 @@ class Announcer:
     async def stop(self) -> None:
         await self._server.stop()
 
-    async def render_preview(self, player: Player, track: Track, guild_cfg: dict) -> Optional[str]:
+    async def render_preview(self, player: Player, track: Track, guild_cfg: dict, *, fresh: bool = False) -> Optional[str]:
         """Renders the announcement text without synthesising or playing it.
 
         Lets a guild tune a template or prompt without waiting out a song, and
         without spending a Piper call on text they are about to rewrite.
+        `fresh` skips the short reuse window, so repeated tests of the same
+        track each get a new line.
         """
         try:
-            text = await self._render_text(player, track, guild_cfg)
-            return " ".join(text.split())[:self._max_text_length] if text else None
+            text = await self._render_text(player, track, guild_cfg, fresh=fresh)
+            return text[:self._max_text_length] if text else None
         except Exception as e:
-            logger.warning(f"TTS announcement preview failed for guild {player.guild.id}: {e}")
+            # repr, not str: some exceptions (timeouts especially) stringify
+            # to nothing, which left the log line ending at the colon.
+            logger.warning(f"TTS announcement preview failed for guild {player.guild.id}: {e!r}", exc_info=e)
             return None
 
-    async def build_announcement(self, player: Player, track: Track, guild_cfg: dict) -> Optional[Track]:
+    async def build_announcement(self, player: Player, track: Track, guild_cfg: dict, *, fresh: bool = False) -> Optional[Track]:
         try:
-            text = await self._render_text(player, track, guild_cfg)
+            text = await self._render_text(player, track, guild_cfg, fresh=fresh)
             if not text:
                 return None
-            text = " ".join(text.split())[:self._max_text_length]
+            text = text[:self._max_text_length]
 
             # Guild voice overrides live under the same key whichever engine is
             # in use; the client drops anything its engine cannot honour.
@@ -854,7 +892,10 @@ class Announcer:
             return self._stamp_duration(results[0], wav, player)
 
         except Exception as e:
-            logger.warning(f"TTS announcement failed for guild {player.guild.id}, playing track normally: {e}")
+            logger.warning(
+                f"TTS announcement failed for guild {player.guild.id}, playing track normally: {e!r}",
+                exc_info=e
+            )
             return None
 
     def _stamp_duration(self, clip: Track, wav: bytes, player: Player) -> Track:
@@ -879,23 +920,139 @@ class Announcer:
 
         return clip
 
-    async def _render_text(self, player: Player, track: Track, guild_cfg: dict) -> Optional[str]:
+    def persona_label(self, guild_cfg: dict) -> Optional[str]:
+        """"key (Name)" for a guild using a library persona, else None."""
+        persona = self._personas.get(guild_cfg.get("persona_key"))
+        return f"{persona.key} ({persona.name})" if persona else None
+
+    def _resolve_persona(self, guild_cfg: dict) -> tuple[str, Optional[Persona], str, str]:
+        """Returns (history id, library persona or None, persona text, prompt template).
+
+        A library persona brings its own prose and uses the shared prompt; a
+        free-text one keeps the guild's prompt and is tracked in history by a
+        hash of its text, so swapping personas still swaps histories.
+        """
+        persona = self._personas.get(guild_cfg.get("persona_key"))
+        if persona:
+            prompt = (
+                persona.prompt
+                or self._personas.prompt()
+                or guild_cfg.get("ai_prompt")
+                or self._default_ai_prompt
+            )
+            return persona.key, persona, persona.persona, prompt
+
+        text = guild_cfg.get("ai_persona") or self._default_ai_persona
+        digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+        return f"custom:{digest}", None, text, guild_cfg.get("ai_prompt") or self._default_ai_prompt
+
+    def _reusable_text(self, key: tuple) -> Optional[str]:
+        cutoff = time.time() - self._recent_text_ttl
+        for stale in [k for k, (_, created) in self._recent_text.items() if created < cutoff]:
+            self._recent_text.pop(stale, None)
+        entry = self._recent_text.get(key)
+        return entry[0] if entry else None
+
+    async def _render_text(self, player: Player, track: Track, guild_cfg: dict, *, fresh: bool = False) -> Optional[str]:
         ph = PlayerPlaceholder(self._bot, player, track=track)
         # Static variable - the rv builder below passes non-callables through,
         # so @@track_genre@@ works in both simple and AI mode.
         ph.variables["track_genre"] = await self._spotify.get_genre(track)
         rv = {key: func() if callable(func) else func for key, func in ph.variables.items()}
 
-        if guild_cfg.get("mode", "simple") == "ai":
-            prompt = ph.replace(guild_cfg.get("ai_prompt") or self._default_ai_prompt, rv)
-            if not prompt:
-                return None
+        # Settle every name in code. Asked to do it itself, the model spelled
+        # one artist three different ways in four minutes.
+        title, artist = self._normaliser.clean_track(track.title, track.author)
+        rv["track_name"], rv["track_author"] = title, artist
+        rv["track_requester_name"] = self._normaliser.requester(rv.get("track_requester_name") or "")
 
-            persona = ph.replace(guild_cfg.get("ai_persona") or self._default_ai_persona, rv)
-            return await self._ai.generate(
-                prompt,
-                persona=persona,
+        if guild_cfg.get("mode", "simple") != "ai":
+            return clean_for_tts(ph.replace(guild_cfg.get("template") or self._default_template, rv) or "") or None
+
+        guild_id = player.guild.id
+        persona_id, persona, persona_text, prompt_template = self._resolve_persona(guild_cfg)
+
+        reuse_key = (guild_id, track.identifier or track.uri, persona_id)
+        if not fresh and (reused := self._reusable_text(reuse_key)):
+            logger.info(f"Reusing the announcement generated moments ago for guild {guild_id} ({persona_id}).")
+            return reused
+
+        recent = self._history.recent(guild_id, persona_id, self._history_shown)
+        direction = pick_direction(persona, recent) if persona else None
+
+        rv["announce_direction"] = "\n\n".join(
+            part for part in (recent_block(recent), direction.instruction() if direction else "") if part
+        )
+        prompt = ph.replace(prompt_template, rv)
+        if not prompt:
+            return None
+        # A free-text prompt written before this existed has no slot for it.
+        if rv["announce_direction"] and "@@announce_direction@@" not in prompt_template:
+            prompt = f"{prompt}\n\n{rv['announce_direction']}"
+
+        persona_text = ph.replace(persona_text, rv)
+        words = persona.words if persona else announce_text.CUSTOM_WORD_RANGE
+        never_say = persona.never_say if persona else ()
+
+        text, reason, attempts = None, None, 0
+        for attempts in (1, 2):
+            request = prompt if attempts == 1 else (
+                f"{prompt}\n\nYour previous attempt {reason}. "
+                "Write a different one, using a different opening subject."
+            )
+            raw = await self._ai.generate(
+                request,
+                persona=persona_text,
                 temperature=guild_cfg.get("ai_temperature")
             )
+            if raw is None:
+                # The endpoint itself failed; a retry would most likely fail
+                # the same way, so play the song without an announcement.
+                return None
 
-        return ph.replace(guild_cfg.get("template") or self._default_template, rv)
+            candidate = clean_for_tts(raw)
+            reason = validate(
+                candidate,
+                title=title,
+                artist=artist,
+                words=words,
+                never_say=never_say,
+                persona_recent=recent,
+                guild_recent=self._history.all(guild_id),
+                similarity=self._similarity
+            )
+            if reason is None:
+                text = candidate
+                break
+
+            logger.warning(
+                f"Rejected announcement for guild {guild_id} ({persona_id}, attempt {attempts}): "
+                f"it {reason}. Text: {candidate}"
+            )
+
+        outcome = "model"
+        if text is None:
+            # A dull line beats a third paid call or a hung queue.
+            outcome = "fallback"
+            fallback = persona.fallback if persona else self._default_template
+            text = clean_for_tts(ph.replace(fallback, rv) or "")
+            if not text:
+                return None
+
+        logger.info(
+            f"Announcement for guild {guild_id}: persona={persona_id} "
+            f"angle={direction.angle if direction else '-'} subject={direction.subject if direction else '-'} "
+            f"shape={direction.shape if direction else '-'} attempts={attempts} outcome={outcome}"
+        )
+
+        self._history.record(guild_id, Spoken(
+            text=text,
+            persona=persona_id,
+            title=title,
+            artist=artist,
+            angle=direction.angle if direction else None,
+            subject=direction.subject if direction else None,
+            shape=direction.shape if direction else None
+        ))
+        self._recent_text[reuse_key] = (text, time.time())
+        return text

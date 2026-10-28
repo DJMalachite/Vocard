@@ -292,12 +292,31 @@ class Settings(commands.Cog, name="settings"):
 
         return f"{low}-{high}" if high is not None and high > low else str(low)
 
+    async def _persona_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Suggests the personas in the announcer's library, plus `none` to clear."""
+        announcer = getattr(self.bot, "announcer", None)
+        if not announcer:
+            return []
+
+        current = (current or "").lower()
+        choices = [("none", "none")] + [(f"{p.key} ({p.name})", p.key) for p in announcer.personas.all()]
+        return [
+            app_commands.Choice(name=name, value=value)
+            for name, value in choices
+            if current in name.lower()
+        ][:25]
+
     @settings.command(name="announce", aliases=get_aliases("announce"))
     @app_commands.describe(
         mode="Disable announcements or choose how announcement text is produced.",
         template="Simple-mode template (supports @@variables@@).",
         ai_prompt="AI-mode prompt (supports @@variables@@).",
         persona="AI-mode character/system prompt, e.g. 'You are a calm late-night DJ.'",
+        persona_key="A persona from the bot's library. Overrides persona and ai_prompt. 'none' clears it.",
         temperature="AI creativity from 0.0 (predictable) to 2.0 (wild).",
         frequency="Announce every Nth song. 1 announces every song.",
         frequency_max="Upper bound on the song gap. Set it above frequency to vary the cadence.",
@@ -309,6 +328,7 @@ class Settings(commands.Cog, name="settings"):
         app_commands.Choice(name="Simple", value="simple"),
         app_commands.Choice(name="AI", value="ai")
     ])
+    @app_commands.autocomplete(persona_key=_persona_autocomplete)
     @commands.has_permissions(manage_guild=True)
     @commands.dynamic_cooldown(cooldown_check, commands.BucketType.guild)
     async def announce(
@@ -318,6 +338,7 @@ class Settings(commands.Cog, name="settings"):
         template: str = None,
         ai_prompt: str = None,
         persona: str = None,
+        persona_key: str = None,
         temperature: commands.Range[float, 0.0, 2.0] = None,
         frequency: commands.Range[int, 1, 50] = None,
         frequency_max: commands.Range[int, 1, 50] = None,
@@ -340,6 +361,18 @@ class Settings(commands.Cog, name="settings"):
             updates["tts_announce.ai_prompt"] = ai_prompt
         if persona:
             updates["tts_announce.ai_persona"] = persona
+        if persona_key:
+            persona_key = persona_key.strip().lower()
+            announcer = getattr(self.bot, "announcer", None)
+            if persona_key == "none":
+                updates["tts_announce.persona_key"] = ""
+            elif announcer and announcer.personas.get(persona_key):
+                updates["tts_announce.persona_key"] = persona_key
+            else:
+                available = ", ".join(announcer.personas.keys()) if announcer else ""
+                return await send_localized_message(
+                    ctx, "settings.actions.announcePersonaUnknown", persona_key, available or "-", ephemeral=True
+                )
         if temperature is not None:
             updates["tts_announce.ai_temperature"] = float(temperature)
         if frequency is not None:
@@ -354,6 +387,11 @@ class Settings(commands.Cog, name="settings"):
         if not updates:
             settings = await MongoDBHandler.get_settings(ctx.guild.id)
             guild_cfg = settings.get("tts_announce") or {}
+            announcer = getattr(self.bot, "announcer", None)
+            # A library persona replaces the free-text one, so show which is
+            # in effect in the same slot rather than changing every language
+            # pack's format string.
+            library_persona = announcer.persona_label(guild_cfg) if announcer else None
             texts = await LangHandler.get_lang(ctx.guild.id, "settings.tts.title", "settings.tts.value")
             embed = discord.Embed(title=texts[0], color=voicelink.Config().embed_color)
             embed.description = texts[1].format(
@@ -363,8 +401,9 @@ class Settings(commands.Cog, name="settings"):
                 self._format_announce_range(guild_cfg, "cooldown", 0),
                 guild_cfg.get("ai_temperature", announce_config.get("ai", {}).get("temperature", "default")),
                 guild_cfg.get("template") or announce_config.get("default_template", ""),
-                guild_cfg.get("ai_persona") or announce_config.get("default_ai_persona", ""),
-                guild_cfg.get("ai_prompt") or announce_config.get("default_ai_prompt", "")
+                library_persona or guild_cfg.get("ai_persona") or announce_config.get("default_ai_persona", ""),
+                "persona library prompt (announce/prompt.txt)" if library_persona
+                else guild_cfg.get("ai_prompt") or announce_config.get("default_ai_prompt", "")
             )
             return await dispatch_message(ctx, embed)
 
@@ -401,12 +440,14 @@ class Settings(commands.Cog, name="settings"):
         await ctx.defer(ephemeral=True)
 
         if not speak:
-            text = await announcer.render_preview(player, track, guild_cfg)
+            # fresh: a test asked for twice should give two different lines,
+            # not the same one back from the reuse window.
+            text = await announcer.render_preview(player, track, guild_cfg, fresh=True)
             if not text:
                 return await send_localized_message(ctx, "settings.actions.announceTestFailed", ephemeral=True)
             return await send_localized_message(ctx, "settings.actions.announcePreview", text, ephemeral=True)
 
-        clip = await announcer.build_announcement(player, track, guild_cfg)
+        clip = await announcer.build_announcement(player, track, guild_cfg, fresh=True)
         if not clip or not await player.announce_now(clip):
             return await send_localized_message(ctx, "settings.actions.announceTestFailed", ephemeral=True)
 

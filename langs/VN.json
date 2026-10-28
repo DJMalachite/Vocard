@@ -131,6 +131,7 @@
             "announcePreview": "Xem trước thông báo:\n```{0}```",
             "announceSpoken": "Đang phát thông báo đó ngay bây giờ.",
             "announceTestFailed": "Không thể tạo thông báo. Hãy kiểm tra nhật ký của bot.",
+            "announcePersonaUnknown": "`{0}` không có trong thư viện nhân vật. Hiện có: {1}",
             "piperUpdated": "Đã cập nhật cài đặt giọng Piper: `{0}`.",
             "piperReset": "Đã đặt lại cài đặt giọng Piper của máy chủ này.",
             "piperUnsupported": "Không thể tinh chỉnh `{0}` trên công cụ giọng nói `{1}`, nên không có gì được thay đổi.",

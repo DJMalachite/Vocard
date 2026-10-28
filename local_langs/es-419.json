@@ -252,6 +252,8 @@
     "setting": "configuracion",
     "Tune the announcement voice.": "Ajusta la voz de anuncio.",
     "persona": "persona",
+    "persona_key": "clave_persona",
+    "A persona from the bot's library. Overrides persona and ai_prompt. 'none' clears it.": "Un personaje de la biblioteca del bot. Reemplaza persona y ai_prompt. 'none' lo quita.",
     "AI": "IA",
     "ai_prompt": "prompt_ia",
     "Piper only. Speaker index, for multi-speaker models only.": "Solo Piper. Indice del hablante, solo para modelos multi-hablante.",

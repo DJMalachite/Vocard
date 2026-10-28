@@ -90,6 +90,12 @@
         "max_text_length": 300,
         "loudness": 95,
         "queue_lookahead": 3,
+        "variety": {
+            "history_size": 20,
+            "history_shown": 6,
+            "similarity": 0.6,
+            "reuse_seconds": 45
+        },
         "timeouts": {
             "ai": 10,
             "piper": 10,

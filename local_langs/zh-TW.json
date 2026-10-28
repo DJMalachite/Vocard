@@ -252,6 +252,8 @@
     "setting": "設定項",
     "Tune the announcement voice.": "調整播報語音。",
     "persona": "人設",
+    "persona_key": "人設庫",
+    "A persona from the bot's library. Overrides persona and ai_prompt. 'none' clears it.": "機器人人設庫中的人設。會覆蓋persona和ai_prompt。'none'表示清除。",
     "AI": "AI",
     "ai_prompt": "ai提示詞",
     "Piper only. Speaker index, for multi-speaker models only.": "僅限Piper。說話者索引，僅適用於多說話者模型。",

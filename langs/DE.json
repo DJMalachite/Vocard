@@ -131,6 +131,7 @@
             "announcePreview": "Vorschau der Ansage:\n```{0}```",
             "announceSpoken": "Die Ansage wird jetzt abgespielt.",
             "announceTestFailed": "Die Ansage konnte nicht erstellt werden. Prüfe die Bot-Logs.",
+            "announcePersonaUnknown": "`{0}` ist nicht in der Persona-Bibliothek. Verfügbar: {1}",
             "piperUpdated": "Piper-Stimmeinstellungen aktualisiert: `{0}`.",
             "piperReset": "Piper-Stimmeinstellungen dieses Servers zurückgesetzt.",
             "piperUnsupported": "`{0}` kann bei der Sprach-Engine `{1}` nicht eingestellt werden, es wurde nichts geändert.",

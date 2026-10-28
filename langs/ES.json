@@ -131,6 +131,7 @@
             "announcePreview": "Vista previa del anuncio:\n```{0}```",
             "announceSpoken": "Reproduciendo ese anuncio ahora.",
             "announceTestFailed": "No se pudo generar el anuncio. Revisa los registros del bot.",
+            "announcePersonaUnknown": "`{0}` no está en la biblioteca de personajes. Disponibles: {1}",
             "piperUpdated": "Configuración de voz de Piper actualizada: `{0}`.",
             "piperReset": "Se restableció la configuración de voz de Piper de este servidor.",
             "piperUnsupported": "`{0}` no se puede ajustar en el motor de voz `{1}`, así que no se cambió nada.",

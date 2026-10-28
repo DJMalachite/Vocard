@@ -1,0 +1,13 @@
+{
+    "_comment": "Artist, title word or username -> how it should be spoken. Exact match after casefolding; anything not listed is left alone. Edits apply on the next announcement.",
+    "SZA": "Sizza",
+    "HVRR": "H V R R",
+    "YOASOBI": "Yo-ah-so-bee",
+    "djmalachite": "DJ Malakite",
+    "Ke$ha": "Kesha",
+    "Kesha": "Kesha",
+    "MGMT": "M G M T",
+    "ELO": "E L O",
+    "AC/DC": "A C D C",
+    "ACDC": "A C D C"
+}

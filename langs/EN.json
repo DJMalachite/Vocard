@@ -131,6 +131,7 @@
             "announcePreview": "Announcement preview:\n```{0}```",
             "announceSpoken": "Playing that announcement now.",
             "announceTestFailed": "Could not produce an announcement. Check the bot logs.",
+            "announcePersonaUnknown": "`{0}` is not in the persona library. Available: {1}",
             "piperUpdated": "Updated Piper voice settings: `{0}`.",
             "piperReset": "Reset this server's Piper voice settings.",
             "piperUnsupported": "`{0}` cannot be tuned on the `{1}` voice engine, so nothing was changed.",
